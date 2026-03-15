@@ -1,9 +1,14 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
-import { Globe, Mic, Volume2, UserPlus, Trash2, Zap, LogOut, Settings as SettingsIcon, Phone, Key, CheckCircle, Eye, EyeOff } from 'lucide-react';
+import { Globe, Mic, Volume2, UserPlus, Trash2, Zap, LogOut, Settings as SettingsIcon, Phone, Key, CheckCircle, Eye, EyeOff, User } from 'lucide-react';
 import { getStoredApiKey, saveApiKey } from '../services/aiService';
+import { signOut } from '../services/authService';
+import { useAppSelector } from '../hooks/useStore';
 
 const Settings = () => {
+  const navigate = useNavigate();
+  const authUser = useAppSelector((s) => s.auth.user);
   const [lang, setLang] = useState('ne');
   const [voiceInput, setVoiceInput] = useState(true);
   const [aiVoice, setAiVoice] = useState(true);
@@ -18,11 +23,33 @@ const Settings = () => {
     setTimeout(() => setKeySaved(false), 2500);
   }
 
+  async function handleSignOut() {
+    await signOut();
+    navigate('/login');
+  }
+
   return (
     <div className="min-h-screen bg-surface-50 pb-20">
       <Header title="सेटिङ (Settings)" showProfile={false} />
 
       <div className="px-6 py-4 space-y-6">
+
+        {/* User Profile Card */}
+        {authUser && (
+          <section>
+            <div className="bg-white rounded-2xl p-4 border border-surface-200 shadow-sm flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center shrink-0">
+                <User size={24} className="text-primary-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                {authUser.name && (
+                  <h3 className="font-bold text-slate-800 text-sm truncate">{authUser.name}</h3>
+                )}
+                <p className="text-xs text-slate-500 truncate">{authUser.email}</p>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Language */}
         <section>
@@ -191,7 +218,7 @@ const Settings = () => {
             हाम्रो बारेमा (About Us)
           </div>
 
-          <button className="w-full bg-danger-500 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-sm">
+          <button onClick={handleSignOut} className="w-full bg-danger-500 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-sm">
             <LogOut size={18} /> लग-आउट (Logout)
           </button>
         </section>

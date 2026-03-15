@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
-import { Mic, FileText, Pill, MapPin, AlertTriangle, ChevronRight, Zap } from 'lucide-react';
+import { Mic, FileText, Pill, MapPin, AlertTriangle, ChevronRight, Zap, Radio } from 'lucide-react';
 
 const Home = () => {
   const navigate = useNavigate();
@@ -46,6 +46,21 @@ const Home = () => {
         </div>
 
         <h3 className="text-lg font-bold text-slate-900 mb-4">मुख्य सुविधाहरू</h3>
+
+        {/* Live AI Doctor — full-width featured card */}
+        <div
+          onClick={() => navigate('/live')}
+          className="w-full bg-gradient-to-r from-rose-500 to-primary-600 rounded-2xl p-4 mb-4 flex items-center gap-4 cursor-pointer shadow-md hover:shadow-lg transition-shadow"
+        >
+          <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+            <Radio size={24} className="text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h4 className="font-bold text-white text-sm">AI डाक्टर (Live Voice)</h4>
+            <p className="text-white/80 text-xs truncate">सिधा बोल्नुहोस् — AI तुरुन्त जवाफ दिन्छ</p>
+          </div>
+          <ChevronRight size={18} className="text-white/70 shrink-0" />
+        </div>
 
         {/* Grid of features */}
         <div className="grid grid-cols-2 gap-4 mb-6">

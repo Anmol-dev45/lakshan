@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Sensitive files
+nexalaris_nodejs_guide.html
+backend/.env
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

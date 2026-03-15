@@ -1,166 +1,17 @@
-import type { ChatMessage, DiagnosisResult, RiskLevel } from '../types/health';
+import type { ChatMessage, DiagnosisResult, RiskLevel, UrgencyLevel, ConfidenceLevel } from '../types/health';
 
-// ─── Anthropic API config ─────────────────────────────────────────────────────
+// ─── Backend base URL ─────────────────────────────────────────────────────────
+const BACKEND = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000';
 
-const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
-const MODEL = 'claude-haiku-4-5-20251001';
-
-// ─── Retrieves user-stored API key from localStorage ─────────────────────────
-
+// ─── Local API key (kept for legacy settings page display) ────────────────────
 export function getStoredApiKey(): string {
   return localStorage.getItem('anthropic_api_key') ?? '';
 }
-
 export function saveApiKey(key: string): void {
   localStorage.setItem('anthropic_api_key', key.trim());
 }
 
-// ─── System prompt: medical risk analysis (NOT diagnosis) ─────────────────────
-
-const SYSTEM_PROMPT = `You are a medical AI health assistant focused on helping people in rural and remote areas access basic health guidance.
-
-CRITICAL GUIDELINES:
-- You provide RISK ANALYSIS and PROBABILITY-BASED SUGGESTIONS only — NOT medical diagnosis.
-- Always recommend consulting a healthcare professional for definitive diagnosis.
-- Never claim certainty about any diagnosis.
-- Avoid gender or geographic bias without clear evidence.
-- Present all findings probabilistically.
-- Consider common conditions first before rare ones.
-- Be culturally sensitive to South Asian / Nepali health context.
-
-When the user describes symptoms, analyze the full conversation and respond with ONLY a valid JSON object (no markdown, no extra text) in this exact schema:
-
-{
-  "extractedSymptoms": {
-    "symptoms": ["list of identified symptoms in English"],
-    "duration": "duration from conversation, or 'not specified'",
-    "severity": "mild" | "moderate" | "severe",
-    "age": null or integer,
-    "existing_conditions": [],
-    "medications": []
-  },
-  "diseaseRanking": [
-    {
-      "name": "Disease name in English",
-      "localName": "Nepali name if known, otherwise same as name",
-      "probability": 45,
-      "description": "One sentence explanation of why this fits the symptoms"
-    }
-  ],
-  "riskLevel": "safe" | "monitor" | "consult" | "urgent",
-  "riskExplanation": "Plain language explanation of the risk level and why",
-  "recommendations": ["Actionable step 1", "Actionable step 2"],
-  "warningSignsToWatch": ["Warning sign 1", "Warning sign 2"],
-  "needsImmediateCare": false
-}
-
-Risk Level Definitions:
-- "safe"    → Minor issue, safe for home care, no doctor needed immediately
-- "monitor" → Monitor symptoms 48–72 hrs; see doctor if worsening
-- "consult" → Should consult a doctor within 24–48 hours
-- "urgent"  → Seek immediate medical attention
-
-Rules:
-- Include 2–5 diseases in diseaseRanking. Probabilities should total approximately 100.
-- severity is based on user's description ("mild"/"moderate"/"severe").
-- Respond ONLY with the JSON. Do not include any other text.`;
-
-// ─── Mock diagnosis for demos without an API key ──────────────────────────────
-
-function buildMockDiagnosis(messages: ChatMessage[]): DiagnosisResult {
-  const userText = messages
-    .filter((m) => m.role === 'user')
-    .map((m) => m.content.toLowerCase())
-    .join(' ');
-
-  const hasChestPain = /chest|छाती/.test(userText);
-  const hasFever = /fever|ज्वरो|तापक्रम/.test(userText);
-  const hasCough = /cough|खोकी/.test(userText);
-  const hasHeadache = /head|टाउको/.test(userText);
-
-  if (hasChestPain) {
-    return mockResult('urgent', 'chest pain', [
-      { name: 'Cardiac Event', localName: 'मुटुको समस्या', probability: 35, description: 'Chest pain can indicate a cardiac issue requiring immediate evaluation.' },
-      { name: 'Costochondritis', localName: 'ब्रेस्टबोन दुखाइ', probability: 30, description: 'Inflammation of rib cartilage, common cause of chest wall pain.' },
-      { name: 'GERD / Acid Reflux', localName: 'अम्ल प्रवाह', probability: 20, description: 'Stomach acid reflux can cause burning chest discomfort.' },
-      { name: 'Pleuritis', localName: 'फोक्सोको आवरण सूजन', probability: 15, description: 'Inflammation around the lungs causing sharp chest pain.' },
-    ]);
-  }
-  if (hasFever && hasCough) {
-    return mockResult('monitor', 'fever and cough', [
-      { name: 'Influenza', localName: 'फ्लू', probability: 45, description: 'Common viral infection causing fever, cough and body aches.' },
-      { name: 'COVID-19', localName: 'कोभिड-१९', probability: 25, description: 'Coronavirus infection; shares symptoms with influenza.' },
-      { name: 'Common Cold', localName: 'रुघाखोकी', probability: 20, description: 'Mild respiratory viral illness.' },
-      { name: 'Pneumonia', localName: 'निमोनिया', probability: 10, description: 'Lung infection; consider if fever is high and breathing is affected.' },
-    ]);
-  }
-  if (hasHeadache) {
-    return mockResult('safe', 'headache', [
-      { name: 'Tension Headache', localName: 'तनाव टाउको दुखाइ', probability: 55, description: 'Most common headache type caused by stress or muscle tension.' },
-      { name: 'Migraine', localName: 'माइग्रेन', probability: 25, description: 'Recurring moderate-to-severe headaches, often one-sided.' },
-      { name: 'Dehydration', localName: 'पानीको कमी', probability: 20, description: 'Inadequate fluid intake can cause headaches.' },
-    ]);
-  }
-  // default generic mock
-  return mockResult('monitor', 'general symptoms', [
-    { name: 'Viral Syndrome', localName: 'भाइरल संक्रमण', probability: 50, description: 'General viral illness causing fatigue and mild symptoms.' },
-    { name: 'Stress / Fatigue', localName: 'थकान', probability: 30, description: 'Physical or mental exhaustion presenting as multiple symptoms.' },
-    { name: 'Nutritional Deficiency', localName: 'पोषण कमी', probability: 20, description: 'Vitamin or mineral deficiency can cause varied symptoms.' },
-  ]);
-}
-
-function mockResult(
-  riskLevel: RiskLevel,
-  primarySymptom: string,
-  diseases: DiagnosisResult['diseaseRanking'],
-): DiagnosisResult {
-  const configs: Record<RiskLevel, { riskExplanation: string; recommendations: string[]; warningSigns: string[] }> = {
-    safe: {
-      riskExplanation: 'Symptoms suggest a minor issue that can be managed at home with rest and hydration.',
-      recommendations: ['Rest and drink plenty of fluids.', 'Take OTC pain relief if needed.', 'Monitor symptoms for 2–3 days.'],
-      warningSigns: ['Fever exceeds 103°F (39.4°C)', 'Symptoms worsen after 3 days', 'Difficulty breathing'],
-    },
-    monitor: {
-      riskExplanation: 'Symptoms are moderate. Monitor closely for 48 hours. See a doctor if they worsen.',
-      recommendations: ['Rest at home and stay hydrated.', 'Track your temperature twice daily.', 'Avoid strenuous activity.'],
-      warningSigns: ['Fever above 102°F (38.9°C)', 'Difficulty breathing', 'Persistent vomiting or inability to eat'],
-    },
-    consult: {
-      riskExplanation: 'Symptoms suggest you should see a healthcare provider within 24–48 hours for proper evaluation.',
-      recommendations: ['Visit the nearest health post or clinic.', 'Bring a list of your current medications.', 'Rest and avoid self-medicating with antibiotics.'],
-      warningSigns: ['Difficulty breathing', 'Severe pain', 'High fever above 103°F', 'Loss of consciousness'],
-    },
-    urgent: {
-      riskExplanation: 'Symptoms may indicate a serious condition requiring immediate medical attention.',
-      recommendations: ['Go to the nearest hospital emergency immediately.', 'Do not drive — ask someone to take you.', 'If alone, call emergency services.'],
-      warningSigns: ['Chest tightness or pressure', 'Difficulty breathing', 'Sudden severe pain', 'Fainting or confusion'],
-    },
-  };
-
-  const c = configs[riskLevel];
-
-  return {
-    id: crypto.randomUUID(),
-    timestamp: new Date().toISOString(),
-    extractedSymptoms: {
-      symptoms: primarySymptom.split(' ').filter(Boolean),
-      duration: 'not specified',
-      severity: riskLevel === 'safe' ? 'mild' : riskLevel === 'monitor' ? 'moderate' : 'severe',
-      age: null,
-      existing_conditions: [],
-      medications: [],
-    },
-    diseaseRanking: diseases,
-    riskLevel,
-    riskExplanation: c.riskExplanation,
-    recommendations: c.recommendations,
-    warningSignsToWatch: c.warningSigns,
-    needsImmediateCare: riskLevel === 'urgent',
-  };
-}
-
-// ─── AI greeting message ──────────────────────────────────────────────────────
-
+// ─── Initial AI greeting message ─────────────────────────────────────────────
 export const INITIAL_AI_MESSAGE: ChatMessage = {
   id: 'init',
   role: 'assistant',
@@ -169,121 +20,221 @@ export const INITIAL_AI_MESSAGE: ChatMessage = {
   timestamp: new Date().toISOString(),
 };
 
-// ─── Call Claude to analyze the full conversation ─────────────────────────────
+// ─── Build messages array from chat history ───────────────────────────────────
+function toMessages(messages: ChatMessage[]) {
+  return messages
+    .filter((m) => m.id !== 'init' && m.content.trim())
+    .map((m) => ({ role: m.role, content: m.content }));
+}
 
+// ─── analyzeSymptoms — Azure GPT-5.4 via Express backend ─────────────────────
 export async function analyzeSymptoms(messages: ChatMessage[]): Promise<DiagnosisResult> {
-  const apiKey = getStoredApiKey();
+  const claudeMessages = toMessages(messages);
 
-  if (!apiKey) {
-    // No API key — use intelligent mock based on message content
-    await new Promise((r) => setTimeout(r, 1800)); // simulate network latency
-    return buildMockDiagnosis(messages);
+  try {
+    const res = await fetch(`${BACKEND}/api/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: claudeMessages, json_mode: true }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.response) return parseDiagnosis(data.response as Record<string, unknown>);
+    }
+    console.warn('[aiService] Backend non-OK:', res.status);
+  } catch (e) {
+    console.warn('[aiService] Backend unreachable, using mock:', e);
   }
 
-  // Build Claude messages array from chat history (skip the initial AI greeting)
-  const claudeMessages = messages
-    .filter((m) => m.id !== 'init')
-    .map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
+  await new Promise((r) => setTimeout(r, 1500));
+  return buildMockDiagnosis(messages);
+}
 
-  // Append a final instruction to trigger the JSON analysis
-  claudeMessages.push({
-    role: 'user',
-    content:
-      'Based on all the symptoms I have described above, please now provide your full medical risk analysis in the required JSON format.',
-  });
+// ─── chatReply — follow-up question ──────────────────────────────────────────
+export async function chatReply(messages: ChatMessage[]): Promise<string> {
+  const claudeMessages = toMessages(messages);
 
-  const response = await fetch(ANTHROPIC_API, {
+  try {
+    const res = await fetch(`${BACKEND}/api/analyze/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: claudeMessages }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.response) return data.response as string;
+    }
+  } catch (e) {
+    console.warn('[aiService] chat unreachable:', e);
+  }
+
+  await new Promise((r) => setTimeout(r, 800));
+  return buildMockFollowUp(messages);
+}
+
+// ─── transcribeAudio — STT via backend ───────────────────────────────────────
+export async function transcribeAudio(audioBlob: Blob): Promise<string> {
+  const formData = new FormData();
+  const ext = audioBlob.type.includes('mp4') || audioBlob.type.includes('m4a') ? 'm4a'
+             : audioBlob.type.includes('wav')  ? 'wav'
+             : audioBlob.type.includes('ogg')  ? 'ogg'
+             : 'webm';
+  formData.append('audio', audioBlob, `recording.${ext}`);
+  formData.append('language', 'ne');
+
+  const res = await fetch(`${BACKEND}/api/voice/transcribe`, {
     method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1500,
-      system: SYSTEM_PROMPT,
-      messages: claudeMessages,
-    }),
+    body: formData,
   });
+  if (!res.ok) throw new Error(`STT error ${res.status}`);
+  const data = await res.json();
+  return (data.text as string) ?? '';
+}
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Anthropic API error ${response.status}: ${err}`);
-  }
+// ─── synthesizeSpeech — TTS via backend ──────────────────────────────────────
+export async function synthesizeSpeech(
+  text: string,
+  urgencyLevel?: UrgencyLevel,
+): Promise<string> {
+  const res = await fetch(`${BACKEND}/api/tts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, urgency_level: urgencyLevel }),
+  });
+  if (!res.ok) throw new Error(`TTS error ${res.status}`);
+  const data = await res.json();
+  return `${BACKEND}${data.audio_url as string}`;
+}
 
-  const data = await response.json();
-  const rawText: string = data.content?.[0]?.text ?? '';
+// ─── analyzeImage — Vision via backend ───────────────────────────────────────
+export async function analyzeImage(
+  imageFile: File,
+  mode: 'report' | 'medicine' | 'general' = 'report',
+  context = '',
+): Promise<Record<string, unknown>> {
+  const formData = new FormData();
+  formData.append('image', imageFile);
+  formData.append('mode', mode);
+  if (context) formData.append('context', context);
 
-  // Extract JSON from the response (handle possible markdown fence wrapping)
-  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error('AI response did not contain valid JSON.');
-  }
+  const res = await fetch(`${BACKEND}/api/vision`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) throw new Error(`Vision error ${res.status}`);
+  const data = await res.json();
+  return (data.result ?? data) as Record<string, unknown>;
+}
 
-  const parsed = JSON.parse(jsonMatch[0]);
+// ─── Parse backend JSON into DiagnosisResult ─────────────────────────────────
+function parseDiagnosis(raw: Record<string, unknown>): DiagnosisResult {
+  const urgencyLevel = (raw.urgency_level ?? raw.urgencyLevel) as UrgencyLevel | undefined;
+  const riskLevelRaw = (raw.risk_level ?? raw.riskLevel) as string | undefined;
+  const extractedRaw = (raw.extracted_symptoms ?? raw.extractedSymptoms ?? {}) as Record<string, unknown>;
+  const diseaseRaw   = (raw.disease_ranking ?? raw.diseaseRanking ?? []) as Array<Record<string, unknown>>;
+  const watchFor     = (raw.watch_for ?? raw.warningSignsToWatch ?? []) as string[];
+
+  const riskLevel: RiskLevel = (riskLevelRaw as RiskLevel) ??
+    (urgencyLevel === 'emergency' ? 'urgent' :
+     urgencyLevel === 'urgent'    ? 'consult' : 'monitor');
 
   return {
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
-    extractedSymptoms: parsed.extractedSymptoms,
-    diseaseRanking: parsed.diseaseRanking,
-    riskLevel: parsed.riskLevel as RiskLevel,
-    riskExplanation: parsed.riskExplanation,
-    recommendations: parsed.recommendations ?? [],
-    warningSignsToWatch: parsed.warningSignsToWatch ?? [],
-    needsImmediateCare: parsed.needsImmediateCare ?? false,
+    extractedSymptoms: {
+      symptoms:            (extractedRaw.symptoms as string[]) ?? [],
+      duration:            (extractedRaw.duration as string) ?? 'not specified',
+      severity:            (extractedRaw.severity as 'mild' | 'moderate' | 'severe') ?? 'moderate',
+      age:                 (extractedRaw.age as number | null) ?? null,
+      existing_conditions: (extractedRaw.existing_conditions as string[]) ?? [],
+      medications:         (extractedRaw.medications as string[]) ?? [],
+    },
+    diseaseRanking: diseaseRaw.map((d) => ({
+      name:        (d.name as string) ?? '',
+      localName:   (d.local_name ?? d.localName ?? d.name) as string,
+      probability: (d.probability as number) ?? 0,
+      description: (d.description as string) ?? '',
+    })),
+    riskLevel,
+    urgencyLevel,
+    confidence:          (raw.confidence as ConfidenceLevel) ?? undefined,
+    summary:             (raw.summary as string) ?? '',
+    riskExplanation:     (raw.risk_explanation ?? raw.riskExplanation ?? '') as string,
+    recommendedAction:   (raw.recommended_action ?? raw.recommendedAction ?? '') as string,
+    recommendations:     (raw.recommendations as string[]) ?? [],
+    homeCare:            (raw.home_care ?? raw.homeCare ?? null) as string | null,
+    warningSignsToWatch: watchFor,
+    needsImmediateCare:  (raw.needs_immediate_care ?? raw.needsImmediateCare ?? false) as boolean,
+    disclaimer:          (raw.disclaimer as string) ?? 'This is not a substitute for professional medical advice.',
   };
 }
 
-// ─── Send a single conversational message to Claude ──────────────────────────
-// Used for multi-turn follow-up questions before final analysis.
+// ─── Mock fallbacks ───────────────────────────────────────────────────────────
+function buildMockFollowUp(messages: ChatMessage[]): string {
+  const last = [...messages].reverse().find((m) => m.role === 'user')?.content.toLowerCase() ?? '';
+  if (/fever|ज्वरो/.test(last)) return 'ज्वरो कति छ नाप्नुभयो? साथै, के तपाईंलाई खोकी वा सास फेर्न गार्हो छ?';
+  if (/cough|खोकी/.test(last))  return 'खोकी कति दिनदेखि छ? के कफ वा रगत आएको छ?';
+  if (/head|टाउको/.test(last))  return 'टाउको दुखाइ कहाँ केन्द्रित छ? के उज्यालोमा असह्य लाग्छ?';
+  if (/chest|छाती/.test(last))  return 'छातीको दुखाइ कहिलेदेखि सुरु भयो? सास फेर्दा बढ्छ?';
+  return 'थप जानकारी: कति दिनदेखि यो समस्या छ? कुनै पुरानो रोग छ?';
+}
 
-export async function chatReply(messages: ChatMessage[]): Promise<string> {
-  const apiKey = getStoredApiKey();
+function buildMockDiagnosis(messages: ChatMessage[]): DiagnosisResult {
+  const text = messages.filter((m) => m.role === 'user').map((m) => m.content.toLowerCase()).join(' ');
+  if (/chest|छाती/.test(text)) return mockResult('urgent', 'emergency', 'chest pain', MOCK_CHEST);
+  if (/fever|ज्वरो/.test(text) && /cough|खोकी/.test(text)) return mockResult('monitor', 'routine', 'fever and cough', MOCK_FLU);
+  if (/head|टाउको/.test(text))  return mockResult('safe', 'routine', 'headache', MOCK_HEADACHE);
+  return mockResult('monitor', 'routine', 'general symptoms', MOCK_GENERAL);
+}
 
-  if (!apiKey) {
-    // Mock follow-up questions when no API key
-    await new Promise((r) => setTimeout(r, 900));
-    const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content ?? '';
-    if (/fever|ज्वरो/i.test(lastUser)) return 'ज्वरो कति छ नाप्नुभयो? साथै, के तपाईंलाई खोकी वा सास फेर्न गार्हो भएको छ?';
-    if (/cough|खोकी/i.test(lastUser)) return 'खोकी कति दिनदेखि छ? के खोकीमा कफ वा रगत आएको छ?';
-    if (/head|टाउको/i.test(lastUser)) return 'टाउको दुखाइ कहाँ केन्द्रित छ? के उज्यालोमा वा आवाजमा असह्य लाग्छ?';
-    if (/chest|छाती/i.test(lastUser)) return 'छातीको दुखाइ कहिलेदेखि सुरु भयो? के सास फेर्दा दुखाइ बढ्छ?';
-    return 'थप जानकारीको लागि: कति दिनदेखि यो समस्या छ? के तपाईंलाई कुनै पुरानो रोग छ?';
-  }
+const MOCK_CHEST    = [
+  { name: 'Cardiac Event',   localName: 'मुटुको समस्या',       probability: 35, description: 'Chest pain can indicate a cardiac issue.' },
+  { name: 'Costochondritis', localName: 'ब्रेस्टबोन सूजन',    probability: 30, description: 'Inflammation of rib cartilage.' },
+  { name: 'GERD',            localName: 'अम्ल प्रवाह',         probability: 20, description: 'Stomach acid reflux.' },
+  { name: 'Pleuritis',       localName: 'फोक्सोको आवरण सूजन', probability: 15, description: 'Inflammation around the lungs.' },
+];
+const MOCK_FLU      = [
+  { name: 'Influenza',   localName: 'फ्लू',      probability: 45, description: 'Viral infection causing fever, cough and fatigue.' },
+  { name: 'COVID-19',    localName: 'कोभिड-१९', probability: 25, description: 'Coronavirus shares symptoms.' },
+  { name: 'Common Cold', localName: 'रुघाखोकी', probability: 20, description: 'Mild viral respiratory illness.' },
+  { name: 'Pneumonia',   localName: 'निमोनिया',  probability: 10, description: 'Consider if breathing is affected.' },
+];
+const MOCK_HEADACHE = [
+  { name: 'Tension Headache', localName: 'तनाव टाउको दुखाइ', probability: 55, description: 'Most common headache type.' },
+  { name: 'Migraine',         localName: 'माइग्रेन',          probability: 25, description: 'Recurring moderate-to-severe headaches.' },
+  { name: 'Dehydration',      localName: 'पानीको कमी',        probability: 20, description: 'Inadequate fluid intake.' },
+];
+const MOCK_GENERAL  = [
+  { name: 'Viral Syndrome',         localName: 'भाइरल संक्रमण', probability: 50, description: 'General viral illness.' },
+  { name: 'Stress / Fatigue',       localName: 'थकान',           probability: 30, description: 'Physical or mental exhaustion.' },
+  { name: 'Nutritional Deficiency', localName: 'पोषण कमी',       probability: 20, description: 'Vitamin or mineral deficiency.' },
+];
 
-  const claudeMessages = messages
-    .filter((m) => m.id !== 'init')
-    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-
-  const CHAT_SYSTEM = `You are a friendly, empathetic AI health assistant for rural Nepal.
-Ask one focused follow-up question at a time to gather symptom details (duration, severity, age, existing conditions).
-Respond in a mix of Nepali and English since the user may prefer either.
-Keep responses concise (1–2 sentences). Do NOT provide diagnosis yet — just gather information.`;
-
-  const response = await fetch(ANTHROPIC_API, {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-      'anthropic-dangerous-direct-browser-access': 'true',
+function mockResult(
+  riskLevel: RiskLevel, urgencyLevel: UrgencyLevel,
+  primarySymptom: string, diseases: DiagnosisResult['diseaseRanking'],
+): DiagnosisResult {
+  return {
+    id: crypto.randomUUID(), timestamp: new Date().toISOString(),
+    urgencyLevel, confidence: 'medium',
+    summary: `Symptoms suggest ${primarySymptom}. Analysis based on reported symptoms.`,
+    extractedSymptoms: {
+      symptoms: primarySymptom.split(' '), duration: 'not specified',
+      severity: riskLevel === 'safe' ? 'mild' : riskLevel === 'urgent' ? 'severe' : 'moderate',
+      age: null, existing_conditions: [], medications: [],
     },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 200,
-      system: CHAT_SYSTEM,
-      messages: claudeMessages,
-    }),
-  });
-
-  if (!response.ok) throw new Error(`Chat API error ${response.status}`);
-
-  const data = await response.json();
-  return data.content?.[0]?.text ?? 'म बुझें। अरु कुनै लक्षण छन्?';
+    diseaseRanking: diseases, riskLevel,
+    riskExplanation: riskLevel === 'urgent' ? 'Symptoms may indicate a serious condition.'
+      : riskLevel === 'consult' ? 'Symptoms suggest consulting a doctor within 24–48 hours.'
+      : riskLevel === 'monitor' ? 'Monitor symptoms for 48 hours.'
+      : 'Symptoms appear minor and safe for home care.',
+    recommendedAction: riskLevel === 'urgent' ? 'Go to the nearest hospital emergency immediately.'
+      : riskLevel === 'consult' ? 'Visit the nearest health post within 24–48 hours.'
+      : 'Rest, stay hydrated, and monitor symptoms.',
+    recommendations: ['Rest and drink plenty of fluids.', 'Track your temperature twice a day.', 'Avoid strenuous activity.'],
+    homeCare: riskLevel === 'urgent' ? null : 'Rest, fluids, paracetamol for fever if needed.',
+    warningSignsToWatch: ['Fever exceeds 103°F (39.4°C)', 'Difficulty breathing', 'Symptoms worsen after 3 days'],
+    needsImmediateCare: riskLevel === 'urgent',
+    disclaimer: 'This is not a substitute for professional medical advice.',
+  };
 }

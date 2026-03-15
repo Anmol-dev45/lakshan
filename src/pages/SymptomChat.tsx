@@ -10,7 +10,7 @@ import {
   setError,
   clearChat,
 } from '../store/slices/symptomSlice';
-import { addRecord } from '../store/slices/historySlice';
+import { addRecord, syncRecordToSupabase } from '../store/slices/historySlice';
 import { analyzeSymptoms, chatReply } from '../services/aiService';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import type { ChatMessage } from '../types/health';
@@ -39,7 +39,7 @@ const SymptomChat = () => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const voice = useVoiceInput();
 
-  // Sync voice transcript into text input
+  // Sync STT transcript into text input
   useEffect(() => {
     if (voice.transcript) {
       setInputText((prev) => (prev ? `${prev} ${voice.transcript}` : voice.transcript).trim());
@@ -52,7 +52,7 @@ const SymptomChat = () => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isAnalyzing, isChatting]);
 
-  const isBlocked = isAnalyzing || isChatting;
+  const isBlocked = isAnalyzing || isChatting || voice.isTranscribing;
 
   async function sendMessage(text: string) {
     const trimmed = text.trim();
@@ -78,14 +78,16 @@ const SymptomChat = () => {
           diagnosis.extractedSymptoms.symptoms[0] ??
           trimmed.split(' ').slice(0, 3).join(' ');
 
-        dispatch(addRecord({
+        const healthRecord = {
           id: diagnosis.id,
           date: diagnosis.timestamp,
           primarySymptom,
           symptoms: diagnosis.extractedSymptoms.symptoms,
           riskLevel: diagnosis.riskLevel,
           diagnosis,
-        }));
+        };
+        dispatch(addRecord(healthRecord));
+        dispatch(syncRecordToSupabase(healthRecord) as never);
 
         navigate('/diagnosis');
       } catch (err) {
@@ -114,14 +116,16 @@ const SymptomChat = () => {
       dispatch(setDiagnosis(diagnosis));
 
       const primarySymptom = diagnosis.extractedSymptoms.symptoms[0] ?? 'general symptoms';
-      dispatch(addRecord({
+      const healthRecord = {
         id: diagnosis.id,
         date: diagnosis.timestamp,
         primarySymptom,
         symptoms: diagnosis.extractedSymptoms.symptoms,
         riskLevel: diagnosis.riskLevel,
         diagnosis,
-      }));
+      };
+      dispatch(addRecord(healthRecord));
+      dispatch(syncRecordToSupabase(healthRecord) as never);
 
       navigate('/diagnosis');
     } catch (err) {
@@ -262,18 +266,22 @@ const SymptomChat = () => {
           <button
             onClick={handleVoiceToggle}
             disabled={!voice.isSupported || isBlocked}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors shadow-sm ${voice.isListening
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors shadow-sm ${
+              voice.isTranscribing
+                ? 'bg-yellow-500 text-white animate-pulse'
+                : voice.isListening
                 ? 'bg-danger-500 text-white animate-pulse'
                 : 'bg-primary-500 text-white hover:bg-primary-600'
-              } disabled:opacity-40`}
+            } disabled:opacity-40`}
+            title={voice.isTranscribing ? 'प्रक्रियागत...' : voice.isListening ? 'रोक्नुहोस्' : 'बोल्नुहोस्'}
           >
-            {voice.isListening ? <MicOff size={18} /> : <Mic size={18} />}
+            {voice.isTranscribing ? <RefreshCw size={18} className="animate-spin" /> : voice.isListening ? <MicOff size={18} /> : <Mic size={18} />}
           </button>
 
           <div className="relative flex-1">
             <input
               type="text"
-              placeholder={voice.isListening ? 'बोलिरहेको छु...' : 'यहाँ लेख्नुहोस् वा बोल्नुहोस्...'}
+              placeholder={voice.isTranscribing ? 'AI सुनिरहेको छ...' : voice.isListening ? 'बोलिरहेको छु... (रोक्न थिच्नुस्)' : 'यहाँ लेख्नुहोस् वा बोल्नुहोस्...'}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage(inputText)}
