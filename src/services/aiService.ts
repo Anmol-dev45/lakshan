@@ -179,11 +179,17 @@ function parseDiagnosis(raw: Record<string, unknown>): DiagnosisResult {
 // ─── Mock fallbacks ───────────────────────────────────────────────────────────
 function buildMockFollowUp(messages: ChatMessage[]): string {
   const last = [...messages].reverse().find((m) => m.role === 'user')?.content.toLowerCase() ?? '';
+  if (/bleed|रगत|blood/.test(last) && /accident|दुर्घटना|wound|चोट|injury|घाउ/.test(last))
+    return 'दुर्घटनाको लागि खेद छ। रगत धेरै आइरहेको छ कि रोकिएको छ? के हड्डी मोडिएको जस्तो लागेको छ?\n(Sorry to hear about the accident. Is the bleeding heavy or has it slowed? Does it feel like anything may be broken?)';
+  if (/bleed|रगत|blood/.test(last))
+    return 'रगत आइरहेको कुरा सुनेर चिन्ता लाग्यो। रगत धेरै आइरहेको छ कि थोरै? कुन ठाउँबाट आइरहेको छ?\n(Concerned about the bleeding — is it heavy or light? Which part of the body?)';
+  if (/accident|दुर्घटना|fall|लड्नु|injury|चोट/.test(last))
+    return 'दुर्घटना भएको सुनेर दुःख लाग्यो। कहाँ चोट लाग्यो र कति दुखिरहेको छ १–१० मा?\n(Sorry to hear that. Where is the injury and how severe is the pain on a scale of 1–10?)';
   if (/fever|ज्वरो/.test(last)) return 'ज्वरो कति छ नाप्नुभयो? साथै, के तपाईंलाई खोकी वा सास फेर्न गार्हो छ?';
   if (/cough|खोकी/.test(last))  return 'खोकी कति दिनदेखि छ? के कफ वा रगत आएको छ?';
   if (/head|टाउको/.test(last))  return 'टाउको दुखाइ कहाँ केन्द्रित छ? के उज्यालोमा असह्य लाग्छ?';
   if (/chest|छाती/.test(last))  return 'छातीको दुखाइ कहिलेदेखि सुरु भयो? सास फेर्दा बढ्छ?';
-  return 'थप जानकारी: कति दिनदेखि यो समस्या छ? कुनै पुरानो रोग छ?';
+  return 'तपाईंले भन्नुभएको बुझें। यो समस्या कति दिनदेखि छ र उमेर र लिंग के हो?\n(Understood. How long has this been going on, and may I ask your age and sex?)';
 }
 
 function buildMockDiagnosis(messages: ChatMessage[]): DiagnosisResult {
