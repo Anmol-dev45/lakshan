@@ -39,13 +39,25 @@ const SymptomChat = () => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const voice = useVoiceInput();
 
-  // Sync STT transcript into text input
+  const pendingVoiceText = useRef('');
+
+  // Store transcript when it arrives
   useEffect(() => {
     if (voice.transcript) {
-      setInputText((prev) => (prev ? `${prev} ${voice.transcript}` : voice.transcript).trim());
+      pendingVoiceText.current = voice.transcript.trim();
       voice.resetTranscript();
     }
   }, [voice.transcript, voice.resetTranscript]);
+
+  // Send once transcribing is fully done (isTranscribing → false)
+  useEffect(() => {
+    if (!voice.isTranscribing && pendingVoiceText.current) {
+      const text = pendingVoiceText.current;
+      pendingVoiceText.current = '';
+      sendMessage(text);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.isTranscribing]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -301,6 +313,9 @@ const SymptomChat = () => {
         <p className="text-center text-[10px] text-slate-400 mt-2">
           यो एआई सल्लाह हो, अन्तिम चिकित्सा निर्णय होइन। • Not a medical diagnosis.
         </p>
+        {voice.error && (
+          <p className="text-center text-[10px] text-red-500 mt-1">⚠ {voice.error}</p>
+        )}
       </div>
     </div>
   );

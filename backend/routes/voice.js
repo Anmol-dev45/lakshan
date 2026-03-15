@@ -39,10 +39,10 @@ router.post('/transcribe', upload.single('audio'), async (req, res) => {
       model:           MODELS.stt,
       file:            fs.createReadStream(newPath),
       language:        req.body.language || 'ne',
-      response_format: 'verbose_json',
+      response_format: 'json',
     });
     fs.unlinkSync(newPath);
-    res.json({ text: transcript.text, language: transcript.language, duration: transcript.duration });
+    res.json({ text: transcript.text });
   } catch (err) {
     if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
     res.status(err.status || 500).json({ error: err.message });
