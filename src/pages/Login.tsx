@@ -4,12 +4,14 @@ import { Mail, Lock, Eye, EyeOff, ArrowRight, UserPlus, AlertCircle, CheckCircle
 import { signIn, signUp } from '../services/authService';
 import { useAppDispatch } from '../hooks/useStore';
 import { setAuthError, clearAuthError } from '../store/slices/authSlice';
+import { useT } from '../i18n/useT';
 
 type Mode = 'signin' | 'signup';
 
 const Login = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
+  const t = useT();
 
   const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
@@ -40,17 +42,17 @@ const Login = () => {
       } else {
         const { user } = await signUp(email, password, fullName);
         if (user?.identities?.length === 0) {
-          setLocalError('यो इमेल पहिलेनै दर्ता भएको छ। लगइन प्रयास गर्नुहोस्।');
+          setLocalError(t('errEmailTaken'));
         } else {
-          setSuccessMsg('खाता सिर्जना भयो! आफ्नो इमेल जाँच गरी पुष्टि लिंक थिच्नुहोस्।');
+          setSuccessMsg(t('msgSignupOk'));
         }
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'अज्ञात त्रुटि भयो';
+      const msg = err instanceof Error ? err.message : t('errUnknown');
       setLocalError(
-        msg.includes('Invalid login credentials') ? 'गलत इमेल वा पासवर्ड।' :
-          msg.includes('Email not confirmed') ? 'इमेल पुष्टि गरिएको छैन। inbox जाँच्नुहोस्।' :
-            msg.includes('Password') ? 'पासवर्ड कम्तीमा ६ अक्षर हुनुपर्छ।' : msg,
+        msg.includes('Invalid login credentials') ? t('errBadCredentials') :
+          msg.includes('Email not confirmed') ? t('errEmailUnconfirmed') :
+            msg.includes('Password') ? t('errWeakPassword') : msg,
       );
       dispatch(setAuthError(msg));
     } finally {
@@ -72,8 +74,8 @@ const Login = () => {
               <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">स्वस्थ जीवन</h1>
-          <p className="text-slate-500 text-sm mt-1">तपाईंको स्वास्थ्य, हाम्रो प्राथमिकता</p>
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">{t('loginBrand')}</h1>
+          <p className="text-slate-500 text-sm mt-1">{t('loginBrandSub')}</p>
         </div>
 
         {/* Mode toggle */}
@@ -82,13 +84,13 @@ const Login = () => {
             onClick={() => switchMode('signin')}
             className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all ${mode === 'signin' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500'}`}
           >
-            लगइन
+            {t('loginTab')}
           </button>
           <button
             onClick={() => switchMode('signup')}
             className={`flex-1 py-2.5 text-sm font-bold rounded-xl transition-all ${mode === 'signup' ? 'bg-white text-primary-600 shadow-sm' : 'text-slate-500'}`}
           >
-            नयाँ खाता
+            {t('signupTab')}
           </button>
         </div>
 
@@ -98,14 +100,14 @@ const Login = () => {
 
             {mode === 'signup' && (
               <div className="space-y-1.5">
-                <label className="text-sm font-bold text-slate-700 ml-1">पूरा नाम</label>
+                <label className="text-sm font-bold text-slate-700 ml-1">{t('labelFullName')}</label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                     <UserPlus size={17} className="text-slate-400" />
                   </div>
                   <input
                     type="text"
-                    placeholder="आफ्नो नाम"
+                    placeholder={t('phFullName')}
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     className="w-full pl-10 pr-4 py-3.5 bg-surface-50 border border-surface-200 rounded-2xl text-sm focus:outline-none focus:border-primary-500 focus:bg-white transition-all text-slate-800"
@@ -115,7 +117,7 @@ const Login = () => {
             )}
 
             <div className="space-y-1.5">
-              <label className="text-sm font-bold text-slate-700 ml-1">इमेल</label>
+              <label className="text-sm font-bold text-slate-700 ml-1">{t('labelEmail')}</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                   <Mail size={17} className="text-slate-400" />
@@ -132,14 +134,14 @@ const Login = () => {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-bold text-slate-700 ml-1">पासवर्ड</label>
+              <label className="text-sm font-bold text-slate-700 ml-1">{t('labelPassword')}</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                   <Lock size={17} className="text-slate-400" />
                 </div>
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="कम्तीमा ६ अक्षर"
+                  placeholder={t('phPassword')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -176,7 +178,7 @@ const Login = () => {
             >
               {loading
                 ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                : <>{mode === 'signin' ? 'लगइन गर्नुहोस्' : 'खाता सिर्जना गर्नुहोस्'} <ArrowRight size={18} /></>
+                : <>{mode === 'signin' ? t('btnLogin') : t('btnSignup')} <ArrowRight size={18} /></>
               }
             </button>
           </form>
@@ -185,21 +187,21 @@ const Login = () => {
             <>
               <div className="mt-5 mb-4 relative flex items-center justify-center">
                 <div className="border-t border-surface-200 w-full absolute" />
-                <span className="bg-white px-3 text-xs text-slate-400 font-medium relative z-10">वा</span>
+                <span className="bg-white px-3 text-xs text-slate-400 font-medium relative z-10">{t('loginOr')}</span>
               </div>
               <button
                 onClick={() => navigate('/home')}
                 className="w-full bg-surface-50 border border-surface-200 text-slate-600 font-semibold py-3 rounded-2xl text-sm hover:bg-surface-100 transition-colors"
               >
-                बिना खाता जारी राख्नुहोस् (Demo Mode)
+                {t('loginDemo')}
               </button>
             </>
           )}
         </div>
 
         <p className="text-center text-xs text-slate-500">
-          तपाईंको डेटा Supabase मा सुरक्षित राखिन्छ।{' '}
-          <span className="text-slate-400">स्वास्थ्य डेटा कहिँ बिक्री हुँदैन।</span>
+          {t('loginPrivacy')}{' '}
+          <span className="text-slate-400">{t('loginPrivacySub')}</span>
         </p>
       </div>
     </div>

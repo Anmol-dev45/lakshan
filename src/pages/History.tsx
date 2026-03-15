@@ -6,6 +6,7 @@ import { clearHistory } from '../store/slices/historySlice';
 import { setDiagnosis } from '../store/slices/symptomSlice';
 import { RISK_LABELS } from '../types/health';
 import type { RiskLevel } from '../types/health';
+import { useT } from '../i18n/useT';
 
 const RISK_BADGE: Record<RiskLevel, string> = {
   safe: 'bg-success-100 text-success-700',
@@ -25,6 +26,8 @@ const History = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const records = useAppSelector((s) => s.history.records);
+  const lang = useAppSelector((s) => s.settings.language);
+  const t = useT();
 
   function viewDiagnosis(id: string) {
     const record = records.find((r) => r.id === id);
@@ -36,7 +39,7 @@ const History = () => {
 
   return (
     <div className="min-h-screen bg-white pb-24 relative">
-      <Header title="स्वास्थ्य इतिहास" showProfile={false} />
+      <Header title={t('histTitle')} showProfile={false} />
 
       <div className="px-5 py-5">
 
@@ -44,12 +47,12 @@ const History = () => {
         <div className="grid grid-cols-2 gap-3 mb-6">
           <div className="bg-primary-50 rounded-2xl p-4 border border-primary-100 flex flex-col items-center justify-center text-center h-24">
             <Activity className="text-primary-500 mb-1" size={22} />
-            <span className="text-xs text-slate-500 mb-0.5">कुल जाँच</span>
-            <span className="text-base font-bold text-primary-600">{records.length} पटक</span>
+            <span className="text-xs text-slate-500 mb-0.5">{t('histTotalChecks')}</span>
+            <span className="text-base font-bold text-primary-600">{records.length} {t('histTimes')}</span>
           </div>
           <div className="bg-success-50 rounded-2xl p-4 border border-success-100 flex flex-col items-center justify-center text-center h-24">
             <Calendar className="text-success-500 mb-1" size={22} />
-            <span className="text-xs text-slate-500 mb-0.5">पछिल्लो जाँच</span>
+            <span className="text-xs text-slate-500 mb-0.5">{t('histLastCheck')}</span>
             <span className="text-base font-bold text-success-600">
               {records.length > 0
                 ? new Date(records[0].date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
@@ -61,14 +64,14 @@ const History = () => {
         {/* Records list */}
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-            <Clock size={18} /> पछिल्ला रेकर्डहरू
+            <Clock size={18} /> {t('histRecentRecords')}
           </h2>
           {records.length > 0 && (
             <button
               onClick={() => dispatch(clearHistory())}
               className="flex items-center gap-1 text-xs text-danger-500 hover:text-danger-700 transition-colors"
             >
-              <Trash2 size={13} /> सबै मेट्नुहोस्
+              <Trash2 size={13} /> {t('histClearAll')}
             </button>
           )}
         </div>
@@ -76,13 +79,13 @@ const History = () => {
         {records.length === 0 ? (
           <div className="bg-surface-50 rounded-2xl p-8 flex flex-col items-center text-center border border-surface-200 border-dashed">
             <Activity size={36} className="text-slate-300 mb-3" />
-            <p className="font-bold text-slate-600 mb-1">कुनै रेकर्ड छैन</p>
-            <p className="text-xs text-slate-400 mb-4">एआई जाँच पछि तपाईंको इतिहास यहाँ देखिनेछ।</p>
+            <p className="font-bold text-slate-600 mb-1">{t('histEmpty')}</p>
+            <p className="text-xs text-slate-400 mb-4">{t('histEmptySub')}</p>
             <button
               onClick={() => navigate('/chat')}
               className="bg-primary-500 text-white text-sm font-bold px-5 py-2.5 rounded-xl"
             >
-              पहिलो जाँच सुरु गर्नुहोस्
+              {t('histFirstCheck')}
             </button>
           </div>
         ) : (
@@ -104,7 +107,7 @@ const History = () => {
                         })}
                       </span>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${RISK_BADGE[record.riskLevel]}`}>
-                        {riskMeta.ne}
+                        {riskMeta[lang]}
                       </span>
                     </div>
 
@@ -125,7 +128,7 @@ const History = () => {
 
                     {record.diagnosis.diseaseRanking[0] && (
                       <p className="text-xs text-slate-500 mb-3">
-                        सम्भावित:{' '}
+                        {t('histPossible')}{' '}
                         <strong>{record.diagnosis.diseaseRanking[0].localName}</strong>{' '}
                         ({record.diagnosis.diseaseRanking[0].probability}%)
                       </p>
@@ -135,7 +138,7 @@ const History = () => {
                       onClick={() => viewDiagnosis(record.id)}
                       className="w-full bg-primary-500 text-white font-bold py-2 rounded-xl text-xs flex items-center justify-center gap-1 hover:bg-primary-600 transition-colors"
                     >
-                      नतिजा हेर्नुहोस् <ChevronRight size={14} />
+                      {t('histViewResult')} <ChevronRight size={14} />
                     </button>
                   </div>
                 </div>
@@ -146,9 +149,7 @@ const History = () => {
 
         <div className="bg-surface-50 border border-surface-200 border-dashed rounded-2xl p-4 flex gap-3 mt-5">
           <AlertCircle size={18} className="text-slate-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-slate-500 leading-relaxed">
-            नियमित रूपमा लक्षणहरू रेकर्ड गर्नाले एआईलाई तपाईंको स्वास्थ्य ट्रेन्ड पहिचान गर्न सजिलो हुन्छ।
-          </p>
+          <p className="text-xs text-slate-500 leading-relaxed">{t('histTip')}</p>
         </div>
 
       </div>

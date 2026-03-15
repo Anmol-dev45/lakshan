@@ -1,10 +1,12 @@
 import Header from '../components/Header';
 import { Search, MapPin, Navigation, Phone, Zap } from 'lucide-react';
+import { useT } from '../i18n/useT';
 
 const Hospital = () => {
+  const t = useT();
   return (
     <div className="min-h-screen bg-surface-50 pb-20">
-      <Header title="नजिकैका अस्पताल" showProfile={false} />
+      <Header title={t('hospitalTitle')} showProfile={false} />
       
       {/* Map Placeholder */}
       <div className="relative h-48 bg-slate-200">
@@ -12,13 +14,13 @@ const Hospital = () => {
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent flex flex-col justify-end p-4">
           <div className="bg-white rounded-full flex items-center px-4 py-2 shadow-sm mb-[-2rem] relative z-10 mx-2">
             <Search size={20} className="text-slate-400 mr-2 shrink-0" />
-            <input type="text" placeholder="अस्पताल खोज्नुहोस्..." className="w-full text-sm outline-none bg-transparent" />
+            <input type="text" placeholder={t('hospitalSearch')} className="w-full text-sm outline-none bg-transparent" />
           </div>
         </div>
       </div>
       
       <div className="px-4 mt-12 mb-4 flex justify-between items-center">
-        <h2 className="text-lg font-bold text-slate-800">तपाईंको नजिकका अस्पतालहरू</h2>
+        <h2 className="text-lg font-bold text-slate-800">{t('hospitalNearby')}</h2>
         <span className="text-xs bg-primary-100 text-primary-600 px-2 py-1 rounded-full font-medium">३ फेला पर्यो</span>
       </div>
 
@@ -37,7 +39,7 @@ const Hospital = () => {
             </div>
           </div>
           <button className="w-full bg-success-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-success-600 transition-colors">
-            <Phone size={18} /> फोन गर्नुहोस्
+            <Phone size={18} /> {t('hospitalCall')}
           </button>
         </div>
 
@@ -57,7 +59,7 @@ const Hospital = () => {
             </div>
           </div>
           <button className="w-full bg-success-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-success-600 transition-colors">
-            <Phone size={18} /> फोन गर्नुहोस्
+            <Phone size={18} /> {t('hospitalCall')}
           </button>
         </div>
         {/* Hospital Card 3 */}
@@ -74,7 +76,7 @@ const Hospital = () => {
             </div>
           </div>
           <button className="w-full bg-success-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-success-600 transition-colors">
-            <Phone size={18} /> फोन गर्नुहोस्
+            <Phone size={18} /> {t('hospitalCall')}
           </button>
         </div>
       </div>

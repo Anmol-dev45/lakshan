@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Pill, CheckCircle, AlertTriangle, Info, RefreshCw, Camera, Image as ImageIcon, Loader, AlertCircle } from 'lucide-react';
 import { analyzeImage } from '../services/aiService';
+import { useT } from '../i18n/useT';
 
 interface MedicineResult {
   identified: boolean;
@@ -17,6 +18,7 @@ interface MedicineResult {
 }
 
 const MedicineIdentifier = () => {
+  const t = useT();
   const navigate       = useNavigate();
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -61,7 +63,7 @@ const MedicineIdentifier = () => {
         <button onClick={() => navigate(-1)} className="text-slate-800 p-1 hover:bg-surface-100 rounded-full transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-lg font-bold text-slate-800">औषधि पहिचान</h1>
+        <h1 className="text-lg font-bold text-slate-800">{t('medTitle')}</h1>
       </header>
 
       <input ref={fileInputRef}   type="file" accept="image/*"         className="hidden" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
@@ -79,14 +81,14 @@ const MedicineIdentifier = () => {
             ) : (
               <>
                 <div className="w-14 h-14 bg-orange-100 rounded-full flex items-center justify-center text-orange-500 mb-3"><Pill size={28} className="-rotate-45" /></div>
-                <h2 className="text-orange-600 font-bold text-base mb-1">औषधिको फोटो खिच्नुहोस्</h2>
+                <h2 className="text-orange-600 font-bold text-base mb-1">{t('medCapture')}</h2>
                 <p className="text-xs text-slate-500 text-center px-8">औषधिको प्याकेट वा चक्कीको तस्वीर हाल्नुहोस्</p>
               </>
             )}
             {loading && (
               <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center rounded-3xl">
                 <Loader size={28} className="animate-spin text-orange-500 mb-2" />
-                <p className="text-sm font-semibold text-orange-600">AI पहिचान गरिरहेको छ...</p>
+                <p className="text-sm font-semibold text-orange-600">{t('medAnalysing')}</p>
               </div>
             )}
           </div>
@@ -122,7 +124,7 @@ const MedicineIdentifier = () => {
                       <Pill size={28} className="-rotate-45" />
                     </div>
                     <div>
-                      <span className="text-[10px] font-bold text-primary-600 border border-primary-300 rounded-full px-3 py-0.5 inline-block mb-2 bg-primary-50">पहिचान गरियो</span>
+                      <span className="text-[10px] font-bold text-primary-600 border border-primary-300 rounded-full px-3 py-0.5 inline-block mb-2 bg-primary-50">{t('medIdentified')}</span>
                       <h2 className="text-2xl font-bold text-slate-900 leading-tight">
                         {result.local_name || result.name}
                         {result.local_name && result.local_name !== result.name && (
@@ -141,7 +143,7 @@ const MedicineIdentifier = () => {
                 {result.uses && (
                   <div className="bg-white rounded-3xl p-6 shadow-sm border border-surface-200 mb-6">
                     <h3 className="font-bold text-slate-800 text-lg mb-4 flex items-center gap-2">
-                      <CheckCircle size={20} className="text-slate-800" /> यसको प्रयोग
+                      <CheckCircle size={20} className="text-slate-800" /> {t('medUsage')}
                     </h3>
                     <p className="text-primary-600 font-bold text-sm mb-4">{result.uses}</p>
                     {result.usage_instructions && result.usage_instructions.length > 0 && (
@@ -160,7 +162,7 @@ const MedicineIdentifier = () => {
                 {result.precautions && result.precautions.length > 0 && (
                   <div className="bg-orange-50 rounded-3xl p-6 border border-orange-100 mb-6">
                     <h3 className="font-bold text-slate-800 text-lg mb-4 flex items-center gap-2">
-                      <AlertTriangle size={20} className="text-slate-800" /> सावधानी
+                      <AlertTriangle size={20} className="text-slate-800" /> {t('medCaution')}
                     </h3>
                     <ul className="space-y-4">
                       {result.precautions.map((p, i) => (

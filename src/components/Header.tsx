@@ -1,5 +1,6 @@
 import React from 'react';
 import { Plus } from 'lucide-react';
+import { useT } from '../i18n/useT';
 
 interface HeaderProps {
   title?: string;
@@ -7,14 +8,16 @@ interface HeaderProps {
   onBack?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ title = "AI स्वास्थ्य सहायक", showProfile = true }) => {
+const Header: React.FC<HeaderProps> = ({ title = '', showProfile = true }) => {
+  const t = useT();
+  const titleToShow = title || t('appName');
   return (
     <header className="flex items-center justify-between px-6 py-4 bg-white sticky top-0 z-40 border-b border-surface-100">
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center text-white shadow-md">
           <Plus size={18} strokeWidth={3} />
         </div>
-        <h1 className="text-lg font-bold text-slate-800">{title}</h1>
+        <h1 className="text-lg font-bold text-slate-800">{titleToShow}</h1>
       </div>
       
       {showProfile && (

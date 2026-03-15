@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Camera, Image as ImageIcon, Sparkles, FileText, ArrowRight, Info, CheckCircle, Loader, AlertCircle } from 'lucide-react';
 import { analyzeImage } from '../services/aiService';
+import { useT } from '../i18n/useT';
 
 interface Metric {
   name: string;
@@ -28,6 +29,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const MedicalReportScan = () => {
+  const t = useT();
   const navigate       = useNavigate();
   const fileInputRef   = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -66,7 +68,7 @@ const MedicalReportScan = () => {
         <button onClick={() => navigate(-1)} className="text-slate-800 p-1 hover:bg-surface-100 rounded-full transition-colors">
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-lg font-bold text-slate-800">रिपोर्ट स्क्यानर</h1>
+        <h1 className="text-lg font-bold text-slate-800">{t('reportTitle')}</h1>
       </header>
 
       <input ref={fileInputRef}   type="file" accept="image/*"         className="hidden" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
@@ -84,14 +86,14 @@ const MedicalReportScan = () => {
             <>
               <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary-400 opacity-50 animate-[scan_3s_ease-in-out_infinite]" />
               <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center text-primary-500 mb-4"><Camera size={32} /></div>
-              <h2 className="text-primary-600 font-bold text-lg mb-1">रिपोर्टको फोटो खिच्नुहोस्</h2>
+              <h2 className="text-primary-600 font-bold text-lg mb-1">{t('reportCapture')}</h2>
               <p className="text-xs text-slate-500 text-center px-8 leading-relaxed">आफ्नो मेडिकल रिपोर्टलाई फ्रेम भित्र राख्नुहोस्</p>
             </>
           )}
           {loading && (
             <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center rounded-3xl">
               <Loader size={32} className="animate-spin text-primary-500 mb-2" />
-              <p className="text-sm font-semibold text-primary-600">AI विश्लेषण गरिरहेको छ...</p>
+              <p className="text-sm font-semibold text-primary-600">{t('reportAnalysing')}</p>
             </div>
           )}
         </div>
@@ -124,7 +126,7 @@ const MedicalReportScan = () => {
 
             <div className="bg-white border border-surface-200 rounded-3xl p-5 shadow-sm mb-6">
               <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-3">
-                <FileText size={18} className="text-primary-500" /> तपाईंको रिपोर्टको सारांश
+                <FileText size={18} className="text-primary-500" /> {t('reportSummary')}
               </h4>
 
               {result.overall_summary && (
@@ -181,7 +183,7 @@ const MedicalReportScan = () => {
         {!result && !loading && !error && (
           <div className="bg-white border border-surface-200 rounded-3xl p-5 shadow-sm mb-6 opacity-60">
             <h4 className="font-bold text-slate-800 flex items-center gap-2 mb-2">
-              <FileText size={18} className="text-primary-500" /> तपाईंको रिपोर्टको सारांश
+              <FileText size={18} className="text-primary-500" /> {t('reportSummary')}
             </h4>
             <p className="text-xs text-slate-500 leading-relaxed">माथि फोटो खिच्नुहोस् वा ग्यालरीबाट रिपोर्टको तस्वीर हाल्नुहोस्।</p>
           </div>

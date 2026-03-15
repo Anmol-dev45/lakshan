@@ -4,10 +4,8 @@ import { ChevronLeft, AlertTriangle, Activity, Info, Phone, Home, CheckCircle, E
 import { useAppSelector } from '../hooks/useStore';
 import { RISK_LABELS, URGENCY_EMOJI } from '../types/health';
 import { synthesizeSpeech } from '../services/aiService';
+import { useT } from '../i18n/useT';
 
-const CONFIDENCE_LABELS: Record<string, string> = {
-  low: 'कम आत्मविश्वास', medium: 'मध्यम आत्मविश्वास', high: 'उच्च आत्मविश्वास',
-};
 const CONFIDENCE_COLORS: Record<string, string> = {
   low: 'bg-orange-100 text-orange-700',
   medium: 'bg-yellow-100 text-yellow-700',
@@ -23,6 +21,12 @@ function probColor(p: number): string {
 const DiagnosisResult = () => {
   const navigate  = useNavigate();
   const diagnosis = useAppSelector((s) => s.symptom.currentDiagnosis);
+  const lang      = useAppSelector((s) => s.settings.language);
+  const t = useT();
+
+  const CONFIDENCE_LABELS: Record<string, string> = {
+    low: t('diagConfLow'), medium: t('diagConfMed'), high: t('diagConfHigh'),
+  };
   const [ttsLoading, setTtsLoading] = useState(false);
   const [ttsPlaying, setTtsPlaying] = useState(false);
   const [ttsError, setTtsError]     = useState<string | null>(null);
@@ -31,9 +35,9 @@ const DiagnosisResult = () => {
   if (!diagnosis) {
     return (
       <div className="min-h-screen bg-surface-50 flex flex-col items-center justify-center gap-4 p-8">
-        <p className="text-slate-500 text-center">कुनै विश्लेषण भेटिएन। पहिले लक्षण प्रविष्ट गर्नुहोस्।</p>
+        <p className="text-slate-500 text-center">{t('diagNoResult')}</p>
         <button onClick={() => navigate('/chat')} className="bg-primary-500 text-white font-bold px-6 py-3 rounded-2xl">
-          लक्षण जाँच सुरु गर्नुहोस्
+          {t('diagStartCheck')}
         </button>
       </div>
     );
@@ -72,7 +76,7 @@ const DiagnosisResult = () => {
       audio.play();
       setTtsPlaying(true);
     } catch (err) {
-      setTtsError('आवाज उपलब्ध छैन।');
+      setTtsError(t('diagVoiceError'));
     } finally {
       setTtsLoading(false);
     }
@@ -86,7 +90,7 @@ const DiagnosisResult = () => {
           <ChevronLeft size={24} />
         </button>
         <div className="flex-1">
-          <h1 className="text-base font-bold text-slate-800 leading-tight">जाँचको नतिजा</h1>
+          <h1 className="text-base font-bold text-slate-800 leading-tight">{t('diagTitle')}</h1>
           <p className="text-[10px] text-slate-400">
             {new Date(diagnosis.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
           </p>
@@ -102,7 +106,7 @@ const DiagnosisResult = () => {
           } disabled:opacity-40`}
         >
           {ttsLoading ? <Loader size={15} className="animate-spin" /> : ttsPlaying ? <VolumeX size={15} /> : <Volume2 size={15} />}
-          {ttsLoading ? 'लोड...' : ttsPlaying ? 'रोक्नुस्' : 'सुन्नुस्'}
+          {ttsLoading ? t('diagLoading') : ttsPlaying ? t('diagStop') : t('diagListen')}
         </button>
       </header>
 
@@ -145,8 +149,7 @@ const DiagnosisResult = () => {
           </div>
           <div className="flex-1">
             <p className="text-[10px] font-semibold text-slate-500 tracking-wider uppercase mb-0.5">Risk Level</p>
-            <h2 className={`text-lg font-extrabold ${riskMeta.color} leading-tight`}>{riskMeta.en}</h2>
-            <p className="text-sm font-semibold text-slate-700 mb-2">{riskMeta.ne}</p>
+            <h2 className={`text-lg font-extrabold ${riskMeta.color} leading-tight`}>{riskMeta[lang]}</h2>
             <p className="text-sm text-slate-600 leading-relaxed">{diagnosis.riskExplanation}</p>
           </div>
         </div>
@@ -155,7 +158,7 @@ const DiagnosisResult = () => {
         {diagnosis.extractedSymptoms.symptoms.length > 0 && (
           <div>
             <h3 className="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
-              <Eye size={16} className="text-slate-400" /> पहिचान गरिएका लक्षणहरू
+              <Eye size={16} className="text-slate-400" /> {t('diagSymptoms')}
             </h3>
             <div className="flex flex-wrap gap-2">
               {diagnosis.extractedSymptoms.symptoms.map((s) => (
@@ -189,7 +192,7 @@ const DiagnosisResult = () => {
         {diagnosis.missingInfo.length > 0 && diagnosis.confidence !== 'high' && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-2xl px-4 py-3">
             <p className="text-xs font-semibold text-yellow-700 mb-1.5">
-              यो जानकारी थप्दा परिणाम अझ सटीक हुन्छ:
+              {t('diagMissingInfo')}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {diagnosis.missingInfo.map((info) => (
@@ -202,7 +205,7 @@ const DiagnosisResult = () => {
         {/* Disease probability ranking */}
         <div>
           <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
-            <Activity size={18} className="text-primary-500" /> सम्भावित समस्याहरू
+            <Activity size={18} className="text-primary-500" /> {t('diagPossible')}
           </h3>
           <div className="space-y-3">
             {diagnosis.diseaseRanking.map((disease, idx) => (
@@ -239,7 +242,7 @@ const DiagnosisResult = () => {
         {diagnosis.recommendations.length > 0 && (
           <div>
             <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
-              <CheckCircle size={18} className="text-success-500" /> सिफारिसहरू
+              <CheckCircle size={18} className="text-success-500" /> {t('diagRecommend')}
             </h3>
             <div className="bg-white rounded-2xl p-4 border border-surface-100 shadow-sm space-y-3">
               {diagnosis.recommendations.map((rec, i) => (
@@ -256,7 +259,7 @@ const DiagnosisResult = () => {
         {diagnosis.warningSignsToWatch.length > 0 && (
           <div>
             <h3 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
-              <AlertTriangle size={18} className="text-orange-500" /> ध्यान दिनुपर्ने संकेतहरू
+              <AlertTriangle size={18} className="text-orange-500" /> {t('diagWarning')}
             </h3>
             <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 space-y-2">
               {diagnosis.warningSignsToWatch.map((sign, i) => (
@@ -273,7 +276,7 @@ const DiagnosisResult = () => {
         {diagnosis.homeCare && (
           <div className="bg-success-50 border border-success-200 rounded-2xl p-4">
             <h3 className="text-sm font-bold text-success-700 mb-2 flex items-center gap-2">
-              <Home size={15} /> घरेलु उपचार सुझाव
+              <Home size={15} /> {t('diagHomeCare')}
             </h3>
             <p className="text-sm text-slate-700 leading-relaxed">{diagnosis.homeCare}</p>
           </div>
@@ -286,12 +289,12 @@ const DiagnosisResult = () => {
               <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-primary-500 shadow-sm">
                 <Home size={16} />
               </div>
-              <span className="text-sm">थप लक्षण थप्नुहोस्</span>
+              <span className="text-sm">{t('diagAddSymptoms')}</span>
             </div>
           </button>
 
           <button onClick={() => navigate('/hospital')} className="w-full bg-primary-500 text-white font-bold py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 shadow-md hover:bg-primary-600 transition-colors">
-            डाक्टरकहाँ जानुहोस् →
+            {t('diagSeeDoctor')}
           </button>
 
           {diagnosis.needsImmediateCare && (
@@ -300,7 +303,7 @@ const DiagnosisResult = () => {
                 <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-white">
                   <Phone size={16} />
                 </div>
-                <span>तुरुन्त अस्पताल (Emergency)</span>
+                <span>{t('diagEmergency')}</span>
               </div>
             </button>
           )}
@@ -310,9 +313,7 @@ const DiagnosisResult = () => {
         <div className="bg-surface-100 rounded-2xl p-4 flex gap-3 border border-surface-200">
           <Info size={14} className="text-slate-400 shrink-0 mt-0.5" />
           <p className="text-[11px] text-slate-500 leading-relaxed">
-            <strong>सूचना:</strong> यो नतिजा एआई द्वारा तयार गरिएको हो र केवल जोखिम विश्लेषणको लागि हो।
-            यसलाई अन्तिम चिकित्सा सल्लाह मान्नु हुँदैन।
-            गम्भीर अवस्थामा सधैं दक्ष चिकित्सकको परामर्श लिनुहोस्।
+            <strong>{t('diagDisclaimerLabel')}</strong> {t('diagDisclaimer')}
           </p>
         </div>
 

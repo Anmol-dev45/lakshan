@@ -4,12 +4,16 @@ import Header from '../components/Header';
 import { Globe, Mic, Volume2, UserPlus, Trash2, Zap, LogOut, Settings as SettingsIcon, Phone, Key, CheckCircle, Eye, EyeOff, User } from 'lucide-react';
 import { getStoredApiKey, saveApiKey } from '../services/aiService';
 import { signOut } from '../services/authService';
-import { useAppSelector } from '../hooks/useStore';
+import { useAppSelector, useAppDispatch } from '../hooks/useStore';
+import { setLanguage } from '../store/slices/settingsSlice';
+import { useT } from '../i18n/useT';
 
 const Settings = () => {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
   const authUser = useAppSelector((s) => s.auth.user);
-  const [lang, setLang] = useState('ne');
+  const lang = useAppSelector((s) => s.settings.language);
+  const t = useT();
   const [voiceInput, setVoiceInput] = useState(true);
   const [aiVoice, setAiVoice] = useState(true);
   const [offline, setOffline] = useState(false);
@@ -30,7 +34,7 @@ const Settings = () => {
 
   return (
     <div className="min-h-screen bg-surface-50 pb-20">
-      <Header title="सेटिङ (Settings)" showProfile={false} />
+      <Header title={t('settingsTitle')} showProfile={false} />
 
       <div className="px-6 py-4 space-y-6">
 
@@ -54,20 +58,24 @@ const Settings = () => {
         {/* Language */}
         <section>
           <h2 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-            <Globe className="text-primary-500" size={18} /> भाषा परिवर्तन (Language)
+            <Globe className="text-primary-500" size={18} /> {t('settingsLang')}
           </h2>
           <div className="grid grid-cols-2 gap-3">
             <button
-              onClick={() => setLang('ne')}
+              onClick={() => dispatch(setLanguage('ne'))}
               className={`py-3 rounded-xl border flex flex-col items-center justify-center transition-colors ${lang === 'ne' ? 'bg-primary-500 border-primary-500 text-white shadow-md' : 'bg-white border-surface-200 text-slate-600'}`}>
-              <span className="font-bold">नेपाली</span>
-              <span className={`text-[10px] ${lang === 'ne' ? 'text-primary-100' : 'text-slate-400'}`}>सक्रिय (Active)</span>
+              <span className="font-bold">{t('settingsNepali')}</span>
+              <span className={`text-[10px] ${lang === 'ne' ? 'text-primary-100' : 'text-slate-400'}`}>
+                {lang === 'ne' ? t('settingsActive') : t('settingsChangeNe')}
+              </span>
             </button>
             <button
-              onClick={() => setLang('en')}
+              onClick={() => dispatch(setLanguage('en'))}
               className={`py-3 rounded-xl border flex flex-col items-center justify-center transition-colors ${lang === 'en' ? 'bg-primary-500 border-primary-500 text-white shadow-md' : 'bg-white border-surface-200 text-slate-600'}`}>
-              <span className="font-bold">English</span>
-              <span className={`text-[10px] ${lang === 'en' ? 'text-primary-100' : 'text-slate-400'}`}>Change to English</span>
+              <span className="font-bold">{t('settingsEnglish')}</span>
+              <span className={`text-[10px] ${lang === 'en' ? 'text-primary-100' : 'text-slate-400'}`}>
+                {lang === 'en' ? t('settingsActive') : t('settingsChangeEn')}
+              </span>
             </button>
           </div>
         </section>
@@ -75,7 +83,7 @@ const Settings = () => {
         {/* Voice Settings */}
         <section>
           <h2 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-            <Volume2 className="text-primary-500" size={18} /> आवाज सेटिङ (Voice Settings)
+            <Volume2 className="text-primary-500" size={18} /> {t('settingsVoice')}
           </h2>
           <div className="bg-primary-50 rounded-2xl p-4 mb-3 border border-primary-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -83,11 +91,10 @@ const Settings = () => {
                 <Mic size={20} />
               </div>
               <div>
-                <h3 className="font-bold text-slate-800 text-sm">आवाजबाट खोज्ने</h3>
-                <p className="text-xs text-slate-500">बोलिएका शब्दहरू बुझ्ने सुविधा</p>
+                <h3 className="font-bold text-slate-800 text-sm">{t('settingsVoiceIn')}</h3>
+                <p className="text-xs text-slate-500">{t('settingsVoiceInSub')}</p>
               </div>
             </div>
-            {/* Toggle */}
             <div className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${voiceInput ? 'bg-primary-500' : 'bg-surface-300'}`} onClick={() => setVoiceInput(!voiceInput)}>
               <div className={`w-4 h-4 rounded-full bg-white transition-transform ${voiceInput ? 'translate-x-6' : 'translate-x-0'}`}></div>
             </div>
@@ -99,11 +106,10 @@ const Settings = () => {
                 <Volume2 size={20} />
               </div>
               <div>
-                <h3 className="font-bold text-slate-800 text-sm">AI आवाज सुनाउने</h3>
-                <p className="text-xs text-slate-500">रिपोर्ट पढेर सुनाउने सुविधा</p>
+                <h3 className="font-bold text-slate-800 text-sm">{t('settingsAiVoice')}</h3>
+                <p className="text-xs text-slate-500">{t('settingsAiVoiceSub')}</p>
               </div>
             </div>
-            {/* Toggle */}
             <div className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${aiVoice ? 'bg-primary-500' : 'bg-surface-300'}`} onClick={() => setAiVoice(!aiVoice)}>
               <div className={`w-4 h-4 rounded-full bg-white transition-transform ${aiVoice ? 'translate-x-6' : 'translate-x-0'}`}></div>
             </div>
@@ -114,10 +120,10 @@ const Settings = () => {
         <section>
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Zap className="text-danger-500" size={18} /> आकस्मिक सम्पर्क
+              <Zap className="text-danger-500" size={18} /> {t('settingsEmergency')}
             </h2>
             <button className="text-xs bg-surface-100 text-slate-600 px-3 py-1.5 rounded-full font-medium flex items-center gap-1">
-              + थप्नुहोस्
+              {t('settingsAddContact')}
             </button>
           </div>
 
@@ -149,7 +155,7 @@ const Settings = () => {
             </div>
 
             <button className="w-full bg-white border border-primary-200 border-dashed text-primary-500 py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-semibold hover:bg-primary-50">
-              <UserPlus size={16} /> नयाँ सम्पर्क थप्नुहोस्
+              <UserPlus size={16} /> {t('settingsNewContact')}
             </button>
           </div>
         </section>
@@ -157,11 +163,11 @@ const Settings = () => {
         {/* AI API Key */}
         <section>
           <h2 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-            <Key className="text-primary-500" size={18} /> AI API कन्फिगरेसन
+            <Key className="text-primary-500" size={18} /> {t('settingsApiKey')}
           </h2>
           <div className="bg-white rounded-2xl p-4 border border-surface-200 shadow-sm">
             <p className="text-xs text-slate-500 mb-3 leading-relaxed">
-              Anthropic Claude API key राख्नुहोस्। नराखे demo mode मा चल्नेछ।
+              {t('settingsApiNote')}
             </p>
             <div className="relative mb-3">
               <input
@@ -185,10 +191,10 @@ const Settings = () => {
                   : 'bg-primary-500 text-white hover:bg-primary-600'
                 }`}
             >
-              {keySaved ? <><CheckCircle size={16} /> सुरक्षित भयो!</> : <><Key size={16} /> API Key सुरक्षित गर्नुहोस्</>}
+              {keySaved ? <><CheckCircle size={16} /> {t('settingsKeySaved')}</> : <><Key size={16} /> {t('settingsSaveKey')}</>}
             </button>
             <p className="text-[10px] text-slate-400 mt-2 text-center">
-              Key browser मा मात्र store गरिन्छ। कहिँ पनि पठाइँदैन।
+              {t('settingsKeyNote')}
             </p>
           </div>
         </section>
@@ -196,7 +202,7 @@ const Settings = () => {
         {/* Other Options */}
         <section>
           <h2 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-            <SettingsIcon size={18} className="text-slate-500" /> अन्य विकल्पहरू
+            <SettingsIcon size={18} className="text-slate-500" /> {t('settingsOther')}
           </h2>
 
           <div className="bg-white rounded-2xl p-4 mb-3 border border-surface-200 flex items-center justify-between">
@@ -205,8 +211,8 @@ const Settings = () => {
                 <Zap size={20} />
               </div>
               <div>
-                <h3 className="font-bold text-slate-800 text-sm">अफलाइन मोड</h3>
-                <p className="text-xs text-slate-500">इन्टरनेट बिना चलाउने</p>
+                <h3 className="font-bold text-slate-800 text-sm">{t('settingsOffline')}</h3>
+                <p className="text-xs text-slate-500">{t('settingsOfflineSub')}</p>
               </div>
             </div>
             <div className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${offline ? 'bg-primary-500' : 'bg-surface-300'}`} onClick={() => setOffline(!offline)}>
@@ -215,17 +221,17 @@ const Settings = () => {
           </div>
 
           <div className="bg-surface-100 rounded-xl p-4 mb-4 text-center cursor-pointer text-sm font-bold text-slate-700">
-            हाम्रो बारेमा (About Us)
+            {t('settingsAbout')}
           </div>
 
           <button onClick={handleSignOut} className="w-full bg-danger-500 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-sm">
-            <LogOut size={18} /> लग-आउट (Logout)
+            <LogOut size={18} /> {t('settingsLogout')}
           </button>
         </section>
 
         <div className="text-center pb-8 pt-4">
           <span className="text-[10px] font-medium text-slate-500 bg-surface-100 px-3 py-1 rounded-full border border-surface-200">Version 2.0.4 (AI Powered)</span>
-          <p className="text-xs text-slate-400 mt-2">© २०८० AI स्वास्थ्य नेपाल</p>
+          <p className="text-xs text-slate-400 mt-2">{t('settingsVersion')}</p>
         </div>
 
       </div>

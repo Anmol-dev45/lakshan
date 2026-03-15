@@ -2,14 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Mic, MicOff, PhoneOff, Volume2, Wifi, WifiOff } from 'lucide-react';
 import { useRealtimeVoice } from '../hooks/useRealtimeVoice';
 import type { RealtimeStatus } from '../hooks/useRealtimeVoice';
-
-const STATUS_LABEL: Record<RealtimeStatus, string> = {
-  idle:       'जोड्नका लागि थिच्नुहोस्',
-  connecting: 'जोडिँदैछ...',
-  ready:      'सुनिरहेको छ',
-  speaking:   'AI बोलिरहेको छ...',
-  error:      'त्रुटि भयो',
-};
+import { useT } from '../i18n/useT';
 
 const STATUS_COLOR: Record<RealtimeStatus, string> = {
   idle:       'text-gray-500',
@@ -21,6 +14,16 @@ const STATUS_COLOR: Record<RealtimeStatus, string> = {
 
 export default function LiveConsultation() {
   const navigate = useNavigate();
+  const t = useT();
+
+  const STATUS_LABEL: Record<RealtimeStatus, string> = {
+    idle:       t('liveIdle'),
+    connecting: t('liveConnecting'),
+    ready:      t('liveReady'),
+    speaking:   t('liveSpeaking'),
+    error:      t('liveError'),
+  };
+
   const { status, aiText, userText, isMuted, error, connect, disconnect, toggleMute } =
     useRealtimeVoice();
 
@@ -96,7 +99,7 @@ export default function LiveConsultation() {
         {/* User speech transcript */}
         {userText ? (
           <div className="w-full max-w-sm bg-white border border-surface-100 rounded-2xl px-4 py-3 shadow-sm">
-            <p className="text-xs font-semibold text-gray-400 mb-1">तपाईंले भन्नुभयो</p>
+            <p className="text-xs font-semibold text-gray-400 mb-1">{t('liveYouSaid')}</p>
             <p className="text-sm text-gray-700 leading-relaxed">{userText}</p>
           </div>
         ) : null}
@@ -104,7 +107,7 @@ export default function LiveConsultation() {
         {/* AI response text */}
         {aiText ? (
           <div className="w-full max-w-sm bg-primary-50 border border-primary-200 rounded-2xl px-4 py-3 shadow-sm">
-            <p className="text-xs font-semibold text-primary-500 mb-1">AI डाक्टर</p>
+            <p className="text-xs font-semibold text-primary-500 mb-1">{t('liveAiDoctor')}</p>
             <p className="text-sm text-gray-800 leading-relaxed">{aiText}</p>
           </div>
         ) : null}
@@ -112,7 +115,7 @@ export default function LiveConsultation() {
         {/* Idle hint */}
         {status === 'idle' && (
           <div className="w-full max-w-sm text-center text-gray-400 text-sm space-y-1 mt-2">
-            <p>माथिको बटन थिच्नुहोस्</p>
+            <p>{t('liveIdle')}</p>
             <p className="text-xs">AI सुन्न थाल्छ र सिधै आवाजमा जवाफ दिन्छ</p>
             <p className="text-xs text-gray-300">gpt-realtime-1.5 · full-duplex voice</p>
           </div>

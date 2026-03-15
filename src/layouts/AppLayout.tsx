@@ -1,14 +1,16 @@
 
 import { Outlet, NavLink } from 'react-router-dom';
 import { Home, MapPin, Zap, History as HistoryIcon, Settings } from 'lucide-react';
+import { useT } from '../i18n/useT';
 
 const BottomNav = () => {
+  const t = useT();
   const navItems = [
-    { name: 'गृह', path: '/home', icon: Home },
-    { name: 'अस्पताल', path: '/hospital', icon: MapPin },
-    { name: 'संकट', path: '/emergency', icon: Zap, badge: '9' },
-    { name: 'इतिहास', path: '/history', icon: HistoryIcon },
-    { name: 'सेटिङ', path: '/settings', icon: Settings },
+    { key: 'navHome'      as const, path: '/home',      icon: Home },
+    { key: 'navHospital'  as const, path: '/hospital',  icon: MapPin },
+    { key: 'navEmergency' as const, path: '/emergency', icon: Zap, badge: '9' },
+    { key: 'navHistory'   as const, path: '/history',   icon: HistoryIcon },
+    { key: 'navSettings'  as const, path: '/settings',  icon: Settings },
   ];
 
   return (
@@ -35,7 +37,7 @@ const BottomNav = () => {
                     </span>
                   )}
                 </div>
-                <span>{item.name}</span>
+                <span>{t(item.key)}</span>
               </>
             )}
           </NavLink>

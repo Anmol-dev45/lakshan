@@ -14,17 +14,18 @@ import { addRecord, syncRecordToSupabase } from '../store/slices/historySlice';
 import { analyzeSymptoms, chatReply, analyzeImage } from '../services/aiService';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import type { ChatMessage } from '../types/health';
+import { useT } from '../i18n/useT';
 
 // ─── Number of user turns before we show "Analyse now" button ─────────────────
 const MIN_TURNS_FOR_ANALYSIS = 2;
 
-// ─── Quick-select symptom chips ───────────────────────────────────────────────
-const QUICK_SYMPTOMS = [
-  { label: 'ज्वरो', icon: Thermometer, hint: 'Fever' },
-  { label: 'टाउको दुखाइ', icon: Target, hint: 'Headache' },
-  { label: 'खोकी', icon: Wind, hint: 'Cough' },
-  { label: 'थकान', icon: Activity, hint: 'Fatigue' },
-  { label: 'छाती दुखाइ', icon: Zap, hint: 'Chest pain' },
+// ─── Quick-select symptom chip icon map ───────────────────────────────────────
+const CHIP_ICONS = [
+  { key: 'chipFever'     as const, icon: Thermometer },
+  { key: 'chipHeadache'  as const, icon: Target },
+  { key: 'chipCough'     as const, icon: Wind },
+  { key: 'chipFatigue'   as const, icon: Activity },
+  { key: 'chipChestPain' as const, icon: Zap },
 ];
 
 function makeMessage(role: 'user' | 'assistant', content: string): ChatMessage {
@@ -35,6 +36,7 @@ const SymptomChat = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const { messages, isAnalyzing, isChatting, error } = useAppSelector((s) => s.symptom);
+  const t = useT();
   const [inputText, setInputText] = useState('');
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
   const bottomRef  = useRef<HTMLDivElement>(null);
@@ -79,7 +81,7 @@ const SymptomChat = () => {
     dispatch(addMessage({
       id: crypto.randomUUID(),
       role: 'user',
-      content: '📷 फोटो पठाइरहेको छु — विश्लेषण गर्दैछु...',
+      content: t('chatSendingPhoto'),
       imageUrl: objectUrl,
       timestamp: new Date().toISOString(),
     }));
@@ -115,7 +117,7 @@ const SymptomChat = () => {
       dispatch(addMessage({
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: 'फोटो विश्लेषण गर्न सकिएन। कृपया पुनः प्रयास गर्नुहोस्।',
+        content: t('chatImageFail'),
         timestamp: new Date().toISOString(),
       }));
       setIsAnalyzingImage(false);
@@ -187,8 +189,8 @@ const SymptomChat = () => {
             <ChevronLeft size={24} />
           </button>
           <div>
-            <h1 className="text-base font-bold text-slate-800 leading-tight">एआई परामर्श</h1>
-            <p className="text-[10px] text-slate-400 leading-none">AI Health Consultation</p>
+            <h1 className="text-base font-bold text-slate-800 leading-tight">{t('chatTitle')}</h1>
+            <p className="text-[10px] text-slate-400 leading-none">{t('chatSubtitle')}</p>
           </div>
         </div>
         <button
@@ -204,7 +206,7 @@ const SymptomChat = () => {
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5 pb-52">
         <div className="flex justify-center">
           <span className="text-[10px] bg-white text-slate-400 font-medium px-3 py-1 rounded-full border border-surface-100">
-            {new Date().toLocaleDateString('ne-NP')} • AI सहायक
+            {new Date().toLocaleDateString('en-GB')} • {t('appName')}
           </span>
         </div>
 
@@ -251,7 +253,7 @@ const SymptomChat = () => {
             <div className="bg-white border border-surface-100 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
               {isAnalyzing ? (
                 <p className="text-xs text-primary-600 font-semibold animate-pulse">
-                  विश्लेषण गरिरहेको छ... (Analyzing symptoms…)
+                  {t('chatAnalysing')}
                 </p>
               ) : (
                 <div className="flex gap-1 items-center h-4">
@@ -278,7 +280,7 @@ const SymptomChat = () => {
               onClick={runAnalysis}
               className="bg-primary-500 text-white text-sm font-bold px-6 py-2.5 rounded-full shadow-md hover:bg-primary-600 transition-colors flex items-center gap-2"
             >
-              <Activity size={16} /> विश्लेषण गर्नुहोस् (Analyse Now)
+              <Activity size={16} /> {t('chatAnalyseBtn')}
             </button>
           </div>
         )}
@@ -290,15 +292,15 @@ const SymptomChat = () => {
       <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-surface-200 px-4 pt-3 pb-5 shadow-[0_-8px_30px_-10px_rgba(0,0,0,0.1)] rounded-t-2xl z-50">
         {/* Quick symptom chips */}
         <div className="flex gap-2 overflow-x-auto no-scrollbar mb-3">
-          {QUICK_SYMPTOMS.map(({ label, icon: Icon }) => (
+          {CHIP_ICONS.map(({ key, icon: Icon }) => (
             <button
-              key={label}
-              onClick={() => sendMessage(label)}
+              key={key}
+              onClick={() => sendMessage(t(key))}
               disabled={isBlocked}
               className="flex items-center gap-1.5 shrink-0 bg-surface-50 border border-surface-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-full hover:border-primary-300 hover:bg-primary-50 transition-colors disabled:opacity-40"
             >
               <Icon size={13} />
-              {label}
+              {t(key)}
             </button>
           ))}
         </div>
@@ -324,7 +326,7 @@ const SymptomChat = () => {
                 ? 'bg-danger-500 text-white animate-pulse'
                 : 'bg-primary-500 text-white hover:bg-primary-600'
             } disabled:opacity-40`}
-            title={voice.isTranscribing ? 'प्रक्रियागत...' : voice.isListening ? 'रोक्नुहोस्' : 'बोल्नुहोस्'}
+            title={voice.isTranscribing ? t('chatTranscribing') : voice.isListening ? '...' : t('chatTitle')}
           >
             {voice.isTranscribing ? <RefreshCw size={18} className="animate-spin" /> : voice.isListening ? <MicOff size={18} /> : <Mic size={18} />}
           </button>
@@ -338,7 +340,7 @@ const SymptomChat = () => {
                 ? 'bg-orange-500 text-white animate-pulse'
                 : 'bg-orange-400 text-white hover:bg-orange-500'
             } disabled:opacity-40`}
-            title="फोटो पठाउनुहोस्"
+            title={t('chatSendingPhoto')}
           >
             {isAnalyzingImage ? <RefreshCw size={18} className="animate-spin" /> : <Camera size={18} />}
           </button>
@@ -346,7 +348,7 @@ const SymptomChat = () => {
           <div className="relative flex-1">
             <input
               type="text"
-              placeholder={voice.isTranscribing ? 'AI सुनिरहेको छ...' : voice.isListening ? 'बोलिरहेको छु... (रोक्न थिच्नुस्)' : 'यहाँ लेख्नुहोस् वा बोल्नुहोस्...'}
+              placeholder={voice.isTranscribing ? t('chatTranscribing') : t('chatPlaceholder')}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage(inputText)}
@@ -364,7 +366,7 @@ const SymptomChat = () => {
         </div>
 
         <p className="text-center text-[10px] text-slate-400 mt-2">
-          यो एआई सल्लाह हो, अन्तिम चिकित्सा निर्णय होइन। • Not a medical diagnosis.
+          {t('chatDisclaimer')}
         </p>
         {voice.error && (
           <p className="text-center text-[10px] text-red-500 mt-1">⚠ {voice.error}</p>
