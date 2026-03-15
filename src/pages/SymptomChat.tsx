@@ -16,7 +16,7 @@ import { useVoiceInput } from '../hooks/useVoiceInput';
 import type { ChatMessage } from '../types/health';
 
 // ─── Number of user turns before we show "Analyse now" button ─────────────────
-const MIN_TURNS_FOR_ANALYSIS = 2;
+const MIN_TURNS_FOR_ANALYSIS = 3;
 
 // ─── Quick-select symptom chips ───────────────────────────────────────────────
 const QUICK_SYMPTOMS = [

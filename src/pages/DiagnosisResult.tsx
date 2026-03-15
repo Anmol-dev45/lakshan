@@ -161,9 +161,19 @@ const DiagnosisResult = () => {
               {diagnosis.extractedSymptoms.symptoms.map((s) => (
                 <span key={s} className="text-xs bg-white border border-surface-200 text-slate-700 px-3 py-1 rounded-full font-medium capitalize">{s}</span>
               ))}
+              {diagnosis.extractedSymptoms.onset !== 'not specified' && (
+                <span className="text-xs bg-white border border-surface-200 text-slate-500 px-3 py-1 rounded-full">
+                  🕐 {diagnosis.extractedSymptoms.onset}
+                </span>
+              )}
               {diagnosis.extractedSymptoms.duration !== 'not specified' && (
                 <span className="text-xs bg-white border border-surface-200 text-slate-500 px-3 py-1 rounded-full">
                   ⏱ {diagnosis.extractedSymptoms.duration}
+                </span>
+              )}
+              {diagnosis.extractedSymptoms.character !== 'not specified' && (
+                <span className="text-xs bg-white border border-surface-200 text-slate-500 px-3 py-1 rounded-full capitalize">
+                  {diagnosis.extractedSymptoms.character}
                 </span>
               )}
               {diagnosis.extractedSymptoms.severity && (
@@ -171,6 +181,20 @@ const DiagnosisResult = () => {
                   {diagnosis.extractedSymptoms.severity} severity
                 </span>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Low-confidence note: what info would help */}
+        {diagnosis.missingInfo.length > 0 && diagnosis.confidence !== 'high' && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-2xl px-4 py-3">
+            <p className="text-xs font-semibold text-yellow-700 mb-1.5">
+              यो जानकारी थप्दा परिणाम अझ सटीक हुन्छ:
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {diagnosis.missingInfo.map((info) => (
+                <span key={info} className="text-[10px] bg-yellow-100 text-yellow-800 border border-yellow-300 px-2 py-0.5 rounded-full">{info}</span>
+              ))}
             </div>
           </div>
         )}
@@ -199,6 +223,13 @@ const DiagnosisResult = () => {
                   <div className={`${probColor(disease.probability)} h-1.5 rounded-full transition-all`} style={{ width: `${Math.min(disease.probability, 100)}%` }} />
                 </div>
                 <p className="text-xs text-slate-500 leading-snug">{disease.description}</p>
+                {disease.keyFeaturesMatching.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {disease.keyFeaturesMatching.map((f) => (
+                      <span key={f} className="text-[10px] bg-primary-50 text-primary-600 border border-primary-100 px-2 py-0.5 rounded-full">{f}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

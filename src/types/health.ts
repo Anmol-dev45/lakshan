@@ -2,9 +2,14 @@
 
 export interface ExtractedSymptoms {
   symptoms: string[];
+  onset: string;
   duration: string;
   severity: 'mild' | 'moderate' | 'severe';
+  character: string;
+  aggravating_factors: string[];
+  relieving_factors: string[];
   age: number | null;
+  sex: string | null;
   existing_conditions: string[];
   medications: string[];
 }
@@ -13,9 +18,10 @@ export interface ExtractedSymptoms {
 
 export interface DiseaseCandidate {
   name: string;
-  localName: string; // Nepali name or same as name
+  localName: string;
   probability: number; // 0–100
   description: string;
+  keyFeaturesMatching: string[];
 }
 
 // ─── Risk / urgency levels ─────────────────────────────────────────────────────
@@ -48,18 +54,16 @@ export interface DiagnosisResult {
   id: string;
   timestamp: string;
 
-  // Symptom data collected during conversation
   extractedSymptoms: ExtractedSymptoms;
 
-  // Guide-specified fields (claude-sonnet-4-20250514 backend returns these)
   urgencyLevel?: UrgencyLevel;
   confidence?: ConfidenceLevel;
+  missingInfo: string[];       // info that would improve accuracy
   summary?: string;
   recommendedAction?: string;
   homeCare?: string | null;
   disclaimer?: string;
 
-  // Disease ranking + risk assessment
   diseaseRanking: DiseaseCandidate[];
   riskLevel: RiskLevel;
   riskExplanation: string;

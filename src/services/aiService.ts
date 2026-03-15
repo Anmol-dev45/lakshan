@@ -143,21 +143,28 @@ function parseDiagnosis(raw: Record<string, unknown>): DiagnosisResult {
     timestamp: new Date().toISOString(),
     extractedSymptoms: {
       symptoms:            (extractedRaw.symptoms as string[]) ?? [],
+      onset:               (extractedRaw.onset as string) ?? 'not specified',
       duration:            (extractedRaw.duration as string) ?? 'not specified',
       severity:            (extractedRaw.severity as 'mild' | 'moderate' | 'severe') ?? 'moderate',
+      character:           (extractedRaw.character as string) ?? 'not specified',
+      aggravating_factors: (extractedRaw.aggravating_factors as string[]) ?? [],
+      relieving_factors:   (extractedRaw.relieving_factors as string[]) ?? [],
       age:                 (extractedRaw.age as number | null) ?? null,
+      sex:                 (extractedRaw.sex as string | null) ?? null,
       existing_conditions: (extractedRaw.existing_conditions as string[]) ?? [],
       medications:         (extractedRaw.medications as string[]) ?? [],
     },
     diseaseRanking: diseaseRaw.map((d) => ({
-      name:        (d.name as string) ?? '',
-      localName:   (d.local_name ?? d.localName ?? d.name) as string,
-      probability: (d.probability as number) ?? 0,
-      description: (d.description as string) ?? '',
+      name:               (d.name as string) ?? '',
+      localName:          (d.local_name ?? d.localName ?? d.name) as string,
+      probability:        (d.probability as number) ?? 0,
+      description:        (d.description as string) ?? '',
+      keyFeaturesMatching:(d.key_features_matching ?? d.keyFeaturesMatching ?? []) as string[],
     })),
     riskLevel,
     urgencyLevel,
     confidence:          (raw.confidence as ConfidenceLevel) ?? undefined,
+    missingInfo:         (raw.missing_info ?? raw.missingInfo ?? []) as string[],
     summary:             (raw.summary as string) ?? '',
     riskExplanation:     (raw.risk_explanation ?? raw.riskExplanation ?? '') as string,
     recommendedAction:   (raw.recommended_action ?? raw.recommendedAction ?? '') as string,
@@ -188,26 +195,26 @@ function buildMockDiagnosis(messages: ChatMessage[]): DiagnosisResult {
 }
 
 const MOCK_CHEST    = [
-  { name: 'Cardiac Event',   localName: 'मुटुको समस्या',       probability: 35, description: 'Chest pain can indicate a cardiac issue.' },
-  { name: 'Costochondritis', localName: 'ब्रेस्टबोन सूजन',    probability: 30, description: 'Inflammation of rib cartilage.' },
-  { name: 'GERD',            localName: 'अम्ल प्रवाह',         probability: 20, description: 'Stomach acid reflux.' },
-  { name: 'Pleuritis',       localName: 'फोक्सोको आवरण सूजन', probability: 15, description: 'Inflammation around the lungs.' },
+  { name: 'Cardiac Event',   localName: 'मुटुको समस्या',       probability: 35, description: 'Chest pain can indicate a cardiac issue.',     keyFeaturesMatching: ['chest pain'] },
+  { name: 'Costochondritis', localName: 'ब्रेस्टबोन सूजन',    probability: 30, description: 'Inflammation of rib cartilage.',               keyFeaturesMatching: ['chest pain'] },
+  { name: 'GERD',            localName: 'अम्ल प्रवाह',         probability: 20, description: 'Stomach acid reflux causing burning chest pain.', keyFeaturesMatching: ['chest pain'] },
+  { name: 'Pleuritis',       localName: 'फोक्सोको आवरण सूजन', probability: 15, description: 'Inflammation around the lungs.',                keyFeaturesMatching: ['chest pain'] },
 ];
 const MOCK_FLU      = [
-  { name: 'Influenza',   localName: 'फ्लू',      probability: 45, description: 'Viral infection causing fever, cough and fatigue.' },
-  { name: 'COVID-19',    localName: 'कोभिड-१९', probability: 25, description: 'Coronavirus shares symptoms.' },
-  { name: 'Common Cold', localName: 'रुघाखोकी', probability: 20, description: 'Mild viral respiratory illness.' },
-  { name: 'Pneumonia',   localName: 'निमोनिया',  probability: 10, description: 'Consider if breathing is affected.' },
+  { name: 'Influenza',   localName: 'फ्लू',      probability: 45, description: 'Viral infection causing fever, cough and fatigue.', keyFeaturesMatching: ['fever', 'cough'] },
+  { name: 'COVID-19',    localName: 'कोभिड-१९', probability: 25, description: 'Coronavirus shares symptoms.',                       keyFeaturesMatching: ['fever', 'cough'] },
+  { name: 'Common Cold', localName: 'रुघाखोकी', probability: 20, description: 'Mild viral respiratory illness.',                    keyFeaturesMatching: ['cough'] },
+  { name: 'Pneumonia',   localName: 'निमोनिया',  probability: 10, description: 'Consider if breathing is affected.',                keyFeaturesMatching: ['cough', 'fever'] },
 ];
 const MOCK_HEADACHE = [
-  { name: 'Tension Headache', localName: 'तनाव टाउको दुखाइ', probability: 55, description: 'Most common headache type.' },
-  { name: 'Migraine',         localName: 'माइग्रेन',          probability: 25, description: 'Recurring moderate-to-severe headaches.' },
-  { name: 'Dehydration',      localName: 'पानीको कमी',        probability: 20, description: 'Inadequate fluid intake.' },
+  { name: 'Tension Headache', localName: 'तनाव टाउको दुखाइ', probability: 55, description: 'Most common headache type.',              keyFeaturesMatching: ['headache'] },
+  { name: 'Migraine',         localName: 'माइग्रेन',          probability: 25, description: 'Recurring moderate-to-severe headaches.', keyFeaturesMatching: ['headache'] },
+  { name: 'Dehydration',      localName: 'पानीको कमी',        probability: 20, description: 'Inadequate fluid intake.',               keyFeaturesMatching: ['headache'] },
 ];
 const MOCK_GENERAL  = [
-  { name: 'Viral Syndrome',         localName: 'भाइरल संक्रमण', probability: 50, description: 'General viral illness.' },
-  { name: 'Stress / Fatigue',       localName: 'थकान',           probability: 30, description: 'Physical or mental exhaustion.' },
-  { name: 'Nutritional Deficiency', localName: 'पोषण कमी',       probability: 20, description: 'Vitamin or mineral deficiency.' },
+  { name: 'Viral Syndrome',         localName: 'भाइरल संक्रमण', probability: 50, description: 'General viral illness.',            keyFeaturesMatching: [] },
+  { name: 'Stress / Fatigue',       localName: 'थकान',           probability: 30, description: 'Physical or mental exhaustion.',    keyFeaturesMatching: [] },
+  { name: 'Nutritional Deficiency', localName: 'पोषण कमी',       probability: 20, description: 'Vitamin or mineral deficiency.',   keyFeaturesMatching: [] },
 ];
 
 function mockResult(
@@ -216,24 +223,26 @@ function mockResult(
 ): DiagnosisResult {
   return {
     id: crypto.randomUUID(), timestamp: new Date().toISOString(),
-    urgencyLevel, confidence: 'medium',
-    summary: `Symptoms suggest ${primarySymptom}. Analysis based on reported symptoms.`,
+    urgencyLevel, confidence: 'low',
+    missingInfo: ['age', 'sex', 'symptom duration', 'associated symptoms'],
+    summary: `Symptoms suggest ${primarySymptom}. Limited information available — confidence is low.`,
     extractedSymptoms: {
-      symptoms: primarySymptom.split(' '), duration: 'not specified',
+      symptoms: primarySymptom.split(' '), onset: 'not specified', duration: 'not specified',
       severity: riskLevel === 'safe' ? 'mild' : riskLevel === 'urgent' ? 'severe' : 'moderate',
-      age: null, existing_conditions: [], medications: [],
+      character: 'not specified', aggravating_factors: [], relieving_factors: [],
+      age: null, sex: null, existing_conditions: [], medications: [],
     },
     diseaseRanking: diseases, riskLevel,
-    riskExplanation: riskLevel === 'urgent' ? 'Symptoms may indicate a serious condition.'
-      : riskLevel === 'consult' ? 'Symptoms suggest consulting a doctor within 24–48 hours.'
-      : riskLevel === 'monitor' ? 'Monitor symptoms for 48 hours.'
-      : 'Symptoms appear minor and safe for home care.',
-    recommendedAction: riskLevel === 'urgent' ? 'Go to the nearest hospital emergency immediately.'
+    riskExplanation: riskLevel === 'urgent' ? 'Symptoms may indicate a serious condition requiring immediate care.'
+      : riskLevel === 'consult' ? 'Symptoms warrant a doctor visit within 24–48 hours.'
+      : riskLevel === 'monitor' ? 'Symptoms should be monitored closely for 48 hours.'
+      : 'Symptoms appear minor and safe for home management.',
+    recommendedAction: riskLevel === 'urgent' ? 'Go to the nearest hospital emergency department immediately.'
       : riskLevel === 'consult' ? 'Visit the nearest health post within 24–48 hours.'
-      : 'Rest, stay hydrated, and monitor symptoms.',
+      : 'Rest, stay hydrated, and monitor for any worsening.',
     recommendations: ['Rest and drink plenty of fluids.', 'Track your temperature twice a day.', 'Avoid strenuous activity.'],
-    homeCare: riskLevel === 'urgent' ? null : 'Rest, fluids, paracetamol for fever if needed.',
-    warningSignsToWatch: ['Fever exceeds 103°F (39.4°C)', 'Difficulty breathing', 'Symptoms worsen after 3 days'],
+    homeCare: riskLevel === 'urgent' ? null : 'Rest, oral fluids, paracetamol for fever if temperature is above 38°C.',
+    warningSignsToWatch: ['Fever exceeds 39.4°C (103°F)', 'Difficulty breathing', 'Symptoms worsen after 48–72 hours'],
     needsImmediateCare: riskLevel === 'urgent',
     disclaimer: 'This is not a substitute for professional medical advice.',
   };
