@@ -16,7 +16,7 @@ import { useVoiceInput } from '../hooks/useVoiceInput';
 import type { ChatMessage } from '../types/health';
 
 // ─── Number of user turns before we show "Analyse now" button ─────────────────
-const MIN_TURNS_FOR_ANALYSIS = 3;
+const MIN_TURNS_FOR_ANALYSIS = 2;
 
 // ─── Quick-select symptom chips ───────────────────────────────────────────────
 const QUICK_SYMPTOMS = [
@@ -34,7 +34,7 @@ function makeMessage(role: 'user' | 'assistant', content: string): ChatMessage {
 const SymptomChat = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  const { messages, isAnalyzing, isChatting, error, turnCount } = useAppSelector((s) => s.symptom);
+  const { messages, isAnalyzing, isChatting, error } = useAppSelector((s) => s.symptom);
   const [inputText, setInputText] = useState('');
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
   const bottomRef  = useRef<HTMLDivElement>(null);
@@ -91,12 +91,26 @@ const SymptomChat = () => {
       const description = (result.raw_response as string) ?? JSON.stringify(result);
 
       // Add AI's visual description as a follow-up user context message
-      dispatch(addMessage({
+      const imageContextMsg = {
         id: crypto.randomUUID(),
-        role: 'user',
+        role: 'user' as const,
         content: `Image shows: ${description}`,
         timestamp: new Date().toISOString(),
-      }));
+      };
+      dispatch(addMessage(imageContextMsg));
+      setIsAnalyzingImage(false);
+
+      // Ask AI a follow-up question so the conversation continues
+      dispatch(setChatting(true));
+      try {
+        const allMsgs = [...messages, imageContextMsg];
+        const reply = await chatReply(allMsgs);
+        dispatch(addMessage(makeMessage('assistant', reply)));
+      } catch {
+        // silently skip follow-up on error — image is already in context
+      } finally {
+        dispatch(setChatting(false));
+      }
     } catch {
       dispatch(addMessage({
         id: crypto.randomUUID(),
@@ -104,7 +118,6 @@ const SymptomChat = () => {
         content: 'फोटो विश्लेषण गर्न सकिएन। कृपया पुनः प्रयास गर्नुहोस्।',
         timestamp: new Date().toISOString(),
       }));
-    } finally {
       setIsAnalyzingImage(false);
     }
   }
@@ -117,49 +130,16 @@ const SymptomChat = () => {
     const userMsg = makeMessage('user', trimmed);
     dispatch(addMessage(userMsg));
 
-    // After enough turns, offer analysis; until then ask follow-up questions
-    const newTurnCount = turnCount + 1; // +1 because addMessage hasn't updated the store yet
-
-    if (newTurnCount >= MIN_TURNS_FOR_ANALYSIS) {
-      // Enough info — proceed to analysis
-      dispatch(setAnalyzing(true));
-      try {
-        const allMsgs = [...messages, userMsg];
-        const diagnosis = await analyzeSymptoms(allMsgs);
-        dispatch(setDiagnosis(diagnosis));
-
-        // Save to history
-        const primarySymptom =
-          diagnosis.extractedSymptoms.symptoms[0] ??
-          trimmed.split(' ').slice(0, 3).join(' ');
-
-        const healthRecord = {
-          id: diagnosis.id,
-          date: diagnosis.timestamp,
-          primarySymptom,
-          symptoms: diagnosis.extractedSymptoms.symptoms,
-          riskLevel: diagnosis.riskLevel,
-          diagnosis,
-        };
-        dispatch(addRecord(healthRecord));
-        dispatch(syncRecordToSupabase(healthRecord) as never);
-
-        navigate('/diagnosis');
-      } catch (err) {
-        dispatch(setError(err instanceof Error ? err.message : 'Analysis failed.'));
-      }
-    } else {
-      // Ask a follow-up question
-      dispatch(setChatting(true));
-      try {
-        const allMsgs = [...messages, userMsg];
-        const reply = await chatReply(allMsgs);
-        dispatch(addMessage(makeMessage('assistant', reply)));
-      } catch (err) {
-        dispatch(setError(err instanceof Error ? err.message : 'Could not get AI reply.'));
-      } finally {
-        dispatch(setChatting(false));
-      }
+    // Always ask follow-up questions — analysis is triggered only by "Analyse Now" button
+    dispatch(setChatting(true));
+    try {
+      const allMsgs = [...messages, userMsg];
+      const reply = await chatReply(allMsgs);
+      dispatch(addMessage(makeMessage('assistant', reply)));
+    } catch (err) {
+      dispatch(setError(err instanceof Error ? err.message : 'Could not get AI reply.'));
+    } finally {
+      dispatch(setChatting(false));
     }
   }
 
