@@ -1,133 +1,298 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, MoreVertical, Mic, Send, Thermometer, Wind, Target } from 'lucide-react';
+import { ChevronLeft, Mic, MicOff, Send, Thermometer, Wind, Target, Zap, Activity, RefreshCw } from 'lucide-react';
+import { useAppDispatch, useAppSelector } from '../hooks/useStore';
+import {
+  addMessage,
+  setAnalyzing,
+  setChatting,
+  setDiagnosis,
+  setError,
+  clearChat,
+} from '../store/slices/symptomSlice';
+import { addRecord } from '../store/slices/historySlice';
+import { analyzeSymptoms, chatReply } from '../services/aiService';
+import { useVoiceInput } from '../hooks/useVoiceInput';
+import type { ChatMessage } from '../types/health';
+
+// ─── Number of user turns before we show "Analyse now" button ─────────────────
+const MIN_TURNS_FOR_ANALYSIS = 2;
+
+// ─── Quick-select symptom chips ───────────────────────────────────────────────
+const QUICK_SYMPTOMS = [
+  { label: 'ज्वरो', icon: Thermometer, hint: 'Fever' },
+  { label: 'टाउको दुखाइ', icon: Target, hint: 'Headache' },
+  { label: 'खोकी', icon: Wind, hint: 'Cough' },
+  { label: 'थकान', icon: Activity, hint: 'Fatigue' },
+  { label: 'छाती दुखाइ', icon: Zap, hint: 'Chest pain' },
+];
+
+function makeMessage(role: 'user' | 'assistant', content: string): ChatMessage {
+  return { id: crypto.randomUUID(), role, content, timestamp: new Date().toISOString() };
+}
 
 const SymptomChat = () => {
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
+  const { messages, isAnalyzing, isChatting, error, turnCount } = useAppSelector((s) => s.symptom);
   const [inputText, setInputText] = useState('');
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const voice = useVoiceInput();
+
+  // Sync voice transcript into text input
+  useEffect(() => {
+    if (voice.transcript) {
+      setInputText((prev) => (prev ? `${prev} ${voice.transcript}` : voice.transcript).trim());
+      voice.resetTranscript();
+    }
+  }, [voice.transcript, voice.resetTranscript]);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isAnalyzing, isChatting]);
+
+  const isBlocked = isAnalyzing || isChatting;
+
+  async function sendMessage(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed || isBlocked) return;
+
+    setInputText('');
+    const userMsg = makeMessage('user', trimmed);
+    dispatch(addMessage(userMsg));
+
+    // After enough turns, offer analysis; until then ask follow-up questions
+    const newTurnCount = turnCount + 1; // +1 because addMessage hasn't updated the store yet
+
+    if (newTurnCount >= MIN_TURNS_FOR_ANALYSIS) {
+      // Enough info — proceed to analysis
+      dispatch(setAnalyzing(true));
+      try {
+        const allMsgs = [...messages, userMsg];
+        const diagnosis = await analyzeSymptoms(allMsgs);
+        dispatch(setDiagnosis(diagnosis));
+
+        // Save to history
+        const primarySymptom =
+          diagnosis.extractedSymptoms.symptoms[0] ??
+          trimmed.split(' ').slice(0, 3).join(' ');
+
+        dispatch(addRecord({
+          id: diagnosis.id,
+          date: diagnosis.timestamp,
+          primarySymptom,
+          symptoms: diagnosis.extractedSymptoms.symptoms,
+          riskLevel: diagnosis.riskLevel,
+          diagnosis,
+        }));
+
+        navigate('/diagnosis');
+      } catch (err) {
+        dispatch(setError(err instanceof Error ? err.message : 'Analysis failed.'));
+      }
+    } else {
+      // Ask a follow-up question
+      dispatch(setChatting(true));
+      try {
+        const allMsgs = [...messages, userMsg];
+        const reply = await chatReply(allMsgs);
+        dispatch(addMessage(makeMessage('assistant', reply)));
+      } catch (err) {
+        dispatch(setError(err instanceof Error ? err.message : 'Could not get AI reply.'));
+      } finally {
+        dispatch(setChatting(false));
+      }
+    }
+  }
+
+  async function runAnalysis() {
+    if (isBlocked || messages.filter((m) => m.role === 'user').length === 0) return;
+    dispatch(setAnalyzing(true));
+    try {
+      const diagnosis = await analyzeSymptoms(messages);
+      dispatch(setDiagnosis(diagnosis));
+
+      const primarySymptom = diagnosis.extractedSymptoms.symptoms[0] ?? 'general symptoms';
+      dispatch(addRecord({
+        id: diagnosis.id,
+        date: diagnosis.timestamp,
+        primarySymptom,
+        symptoms: diagnosis.extractedSymptoms.symptoms,
+        riskLevel: diagnosis.riskLevel,
+        diagnosis,
+      }));
+
+      navigate('/diagnosis');
+    } catch (err) {
+      dispatch(setError(err instanceof Error ? err.message : 'Analysis failed.'));
+    }
+  }
+
+  function handleVoiceToggle() {
+    if (voice.isListening) {
+      voice.stopListening();
+    } else {
+      voice.startListening();
+    }
+  }
+
+  const canAnalyse = !isBlocked && messages.filter((m) => m.role === 'user').length >= MIN_TURNS_FOR_ANALYSIS;
 
   return (
-    <div className="min-h-screen bg-surface-50 flex flex-col relative h-[100dvh]">
+    <div className="min-h-screen bg-surface-50 flex flex-col h-[100dvh]">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white sticky top-0 z-40 border-b border-surface-100">
+      <header className="flex items-center justify-between px-4 py-3 bg-white sticky top-0 z-40 border-b border-surface-100">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate(-1)} className="text-slate-800 p-1 hover:bg-surface-100 rounded-full transition-colors">
             <ChevronLeft size={24} />
           </button>
-          <h1 className="text-lg font-bold text-slate-800">एआई परामर्श</h1>
+          <div>
+            <h1 className="text-base font-bold text-slate-800 leading-tight">एआई परामर्श</h1>
+            <p className="text-[10px] text-slate-400 leading-none">AI Health Consultation</p>
+          </div>
         </div>
-        <button className="text-slate-800 p-1 hover:bg-surface-100 rounded-full transition-colors">
-          <MoreVertical size={20} />
+        <button
+          onClick={() => dispatch(clearChat())}
+          className="text-slate-500 p-1.5 hover:bg-surface-100 rounded-full transition-colors"
+          title="Clear chat"
+        >
+          <RefreshCw size={18} />
         </button>
       </header>
-      
+
       {/* Chat Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-48 relative">
-        {/* Decorative background watermark */}
-        <div className="absolute inset-0 pointer-events-none opacity-5" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%233b82f6\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M22 12h-4l-3 9L9 3l-3 9H2\'/%3E%3C/svg%3E")', backgroundSize: '80px 80px', backgroundRepeat: 'repeat' }}></div>
-        
-        <div className="flex justify-center mb-6 pt-4 relative z-10">
-          <span className="text-xs bg-white text-slate-500 font-medium px-4 py-1.5 rounded-full border border-surface-200">
-            अफलाइन उपलब्ध छ
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5 pb-52">
+        <div className="flex justify-center">
+          <span className="text-[10px] bg-white text-slate-400 font-medium px-3 py-1 rounded-full border border-surface-100">
+            {new Date().toLocaleDateString('ne-NP')} • AI सहायक
           </span>
         </div>
 
-        {/* AI Message */}
-        <div className="flex gap-3 relative z-10 w-4/5">
-          <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center shrink-0">
-             <svg fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-primary-500">
-               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-             </svg>
-          </div>
-          <div>
-            <div className="bg-primary-100 text-slate-800 p-4 rounded-2xl rounded-tl-sm shadow-sm text-[15px] leading-relaxed">
-              नमस्ते! म तपाईंको एआई स्वास्थ्य सहायक हुँ। तपाईंलाई आज कस्तो महसुस भइरहेको छ? कृपया मलाई आफ्ना लक्षणहरू बताउनुहोस्।
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex gap-2.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {msg.role === 'assistant' && (
+              <div className="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center shrink-0 mt-1">
+                <svg fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4 text-primary-500">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+              </div>
+            )}
+            <div className={`max-w-[80%] ${msg.role === 'user' ? 'items-end' : 'items-start'} flex flex-col`}>
+              <div
+                className={`p-3.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${msg.role === 'user'
+                    ? 'bg-primary-500 text-white rounded-tr-sm'
+                    : 'bg-white border border-surface-100 text-slate-800 rounded-tl-sm shadow-sm'
+                  }`}
+              >
+                {msg.content}
+              </div>
+              <span className="text-[10px] text-slate-400 mt-0.5 px-1">
+                {new Date(msg.timestamp).toLocaleTimeString('ne-NP', { hour: '2-digit', minute: '2-digit' })}
+              </span>
             </div>
-            <span className="text-[10px] text-slate-400 mt-1 block">10:00 AM</span>
           </div>
-        </div>
+        ))}
 
-        {/* User Message */}
-        <div className="flex gap-3 relative z-10 justify-end w-full">
-          <div className="w-4/5 flex flex-col items-end">
-            <div className="bg-primary-500 text-white p-4 rounded-2xl rounded-tr-sm shadow-sm text-[15px] leading-relaxed">
-              मलाई दुई दिनदेखि ज्वरो आएको छ र टाउको धेरै दुखिरहेको छ।
+        {/* Typing indicators */}
+        {(isChatting || isAnalyzing) && (
+          <div className="flex gap-2.5 justify-start">
+            <div className="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center shrink-0">
+              <svg fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4 text-primary-500">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
             </div>
-            <span className="text-[10px] text-slate-400 mt-1 block pr-1">10:02 AM</span>
+            <div className="bg-white border border-surface-100 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
+              {isAnalyzing ? (
+                <p className="text-xs text-primary-600 font-semibold animate-pulse">
+                  विश्लेषण गरिरहेको छ... (Analyzing symptoms…)
+                </p>
+              ) : (
+                <div className="flex gap-1 items-center h-4">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+              )}
+            </div>
           </div>
-          <img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?ixlib=rb-4.0.3&w=100&q=80" alt="Avatar" className="w-8 h-8 rounded-full shrink-0 object-cover" />
-        </div>
+        )}
 
-        {/* AI Message 2 */}
-        <div className="flex gap-3 relative z-10 w-4/5">
-          <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center shrink-0">
-             <svg fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-primary-500">
-               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-             </svg>
+        {/* Error banner */}
+        {error && (
+          <div className="bg-danger-50 border border-danger-200 rounded-xl px-4 py-3 text-sm text-danger-700">
+            ⚠ {error}
           </div>
-          <div>
-            <div className="bg-primary-100 text-slate-800 p-4 rounded-2xl rounded-tl-sm shadow-sm text-[15px] leading-relaxed">
-              बुझें। ज्वरो कति छ नाप्नुभयो? साथै, के अरु कुनै खोकी वा सास फेर्न गार्हो....
-            </div>
-            {/* Loading dots... */}
-            <div className="flex gap-1 mt-2 mb-1">
-               <div className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse"></div>
-               <div className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse delay-75"></div>
-               <div className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse delay-150"></div>
-            </div>
+        )}
+
+        {/* Analyse now button (appears after min turns) */}
+        {canAnalyse && !isAnalyzing && (
+          <div className="flex justify-center">
+            <button
+              onClick={runAnalysis}
+              className="bg-primary-500 text-white text-sm font-bold px-6 py-2.5 rounded-full shadow-md hover:bg-primary-600 transition-colors flex items-center gap-2"
+            >
+              <Activity size={16} /> विश्लेषण गर्नुहोस् (Analyse Now)
+            </button>
           </div>
-        </div>
+        )}
+
+        <div ref={bottomRef} />
       </div>
 
-      {/* Input Area Group */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-surface-200 p-4 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] z-50 rounded-t-3xl max-w-md mx-auto">
-        <h3 className="text-sm text-slate-500 mb-3 px-1">छिटो चयन गर्नुहोस्</h3>
-        
-        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-4 px-1">
-          <button className="flex flex-col items-center justify-center bg-surface-50 border border-surface-100 rounded-2xl p-3 min-w-[90px] hover:border-primary-300 transition-colors shrink-0">
-            <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-500 mb-2">
-              <Thermometer size={20} />
-            </div>
-            <span className="text-sm font-bold text-slate-700">ज्वरो</span>
-          </button>
-          
-          <button className="flex flex-col items-center justify-center bg-surface-50 border border-surface-100 rounded-2xl p-3 min-w-[90px] hover:border-primary-300 transition-colors shrink-0">
-            <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-500 mb-2">
-              <Target size={20} />
-            </div>
-            <span className="text-sm font-bold text-slate-700">टाउको दुखाइ</span>
-          </button>
-
-          <button className="flex flex-col items-center justify-center bg-surface-50 border border-surface-100 rounded-2xl p-3 min-w-[90px] hover:border-primary-300 transition-colors shrink-0">
-            <div className="w-10 h-10 rounded-full bg-cyan-50 flex items-center justify-center text-cyan-500 mb-2">
-              <Wind size={20} />
-            </div>
-            <span className="text-sm font-bold text-slate-700">खोकी</span>
-          </button>
+      {/* Input dock */}
+      <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-surface-200 px-4 pt-3 pb-5 shadow-[0_-8px_30px_-10px_rgba(0,0,0,0.1)] rounded-t-2xl z-50">
+        {/* Quick symptom chips */}
+        <div className="flex gap-2 overflow-x-auto no-scrollbar mb-3">
+          {QUICK_SYMPTOMS.map(({ label, icon: Icon }) => (
+            <button
+              key={label}
+              onClick={() => sendMessage(label)}
+              disabled={isBlocked}
+              className="flex items-center gap-1.5 shrink-0 bg-surface-50 border border-surface-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-full hover:border-primary-300 hover:bg-primary-50 transition-colors disabled:opacity-40"
+            >
+              <Icon size={13} />
+              {label}
+            </button>
+          ))}
         </div>
 
-        {/* Input Field */}
-        <div className="relative flex items-center">
-          <div className="absolute inset-y-0 left-1 flex items-center p-1.5">
-            <button className="w-10 h-10 bg-primary-500 text-white rounded-xl flex items-center justify-center shadow-sm hover:bg-primary-600 transition-colors focus:outline-none">
-              <Mic size={20} />
-            </button>
-          </div>
-          <input 
-            type="text" 
-            placeholder="यहाँ लेख्नुहोस् वा बोल्नुहोस्..." 
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            className="w-full bg-white border border-surface-300 rounded-2xl py-4 pl-14 pr-12 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-400 transition-all font-medium"
-          />
-          <div className="absolute inset-y-0 right-2 flex items-center p-2">
-             <button onClick={() => navigate('/diagnosis')} className="text-slate-400 hover:text-primary-500 transition-colors focus:outline-none p-1">
-              <Send size={22} className="rotate-45" />
+        {/* Text + voice input */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleVoiceToggle}
+            disabled={!voice.isSupported || isBlocked}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors shadow-sm ${voice.isListening
+                ? 'bg-danger-500 text-white animate-pulse'
+                : 'bg-primary-500 text-white hover:bg-primary-600'
+              } disabled:opacity-40`}
+          >
+            {voice.isListening ? <MicOff size={18} /> : <Mic size={18} />}
+          </button>
+
+          <div className="relative flex-1">
+            <input
+              type="text"
+              placeholder={voice.isListening ? 'बोलिरहेको छु...' : 'यहाँ लेख्नुहोस् वा बोल्नुहोस्...'}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage(inputText)}
+              disabled={isBlocked}
+              className="w-full bg-surface-50 border border-surface-200 rounded-xl py-3 pl-4 pr-12 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-primary-400 focus:ring-1 focus:ring-primary-200 disabled:opacity-40"
+            />
+            <button
+              onClick={() => sendMessage(inputText)}
+              disabled={!inputText.trim() || isBlocked}
+              className="absolute inset-y-0 right-2 flex items-center justify-center w-8 text-slate-400 hover:text-primary-500 disabled:opacity-30 transition-colors"
+            >
+              <Send size={18} className="-rotate-45" />
             </button>
           </div>
         </div>
 
-        <p className="text-[10px] text-center text-slate-400 mt-4 tracking-wide font-medium">तपाईंको डेटा सुरक्षित र अफलाइन भण्डारण गरिएको छ।</p>
+        <p className="text-center text-[10px] text-slate-400 mt-2">
+          यो एआई सल्लाह हो, अन्तिम चिकित्सा निर्णय होइन। • Not a medical diagnosis.
+        </p>
       </div>
     </div>
   );
