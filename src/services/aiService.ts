@@ -109,7 +109,7 @@ export async function synthesizeSpeech(
 // ─── analyzeImage — Vision via backend ───────────────────────────────────────
 export async function analyzeImage(
   imageFile: File,
-  mode: 'report' | 'medicine' | 'general' = 'report',
+  mode: 'report' | 'medicine' | 'symptom' | 'general' = 'report',
   context = '',
 ): Promise<Record<string, unknown>> {
   const formData = new FormData();

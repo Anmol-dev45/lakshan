@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Mic, MicOff, Send, Thermometer, Wind, Target, Zap, Activity, RefreshCw } from 'lucide-react';
+import { ChevronLeft, Mic, MicOff, Send, Thermometer, Wind, Target, Zap, Activity, RefreshCw, Camera } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../hooks/useStore';
 import {
   addMessage,
@@ -11,7 +11,7 @@ import {
   clearChat,
 } from '../store/slices/symptomSlice';
 import { addRecord, syncRecordToSupabase } from '../store/slices/historySlice';
-import { analyzeSymptoms, chatReply } from '../services/aiService';
+import { analyzeSymptoms, chatReply, analyzeImage } from '../services/aiService';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import type { ChatMessage } from '../types/health';
 
@@ -36,7 +36,9 @@ const SymptomChat = () => {
   const dispatch = useAppDispatch();
   const { messages, isAnalyzing, isChatting, error, turnCount } = useAppSelector((s) => s.symptom);
   const [inputText, setInputText] = useState('');
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+  const bottomRef  = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const voice = useVoiceInput();
 
   const pendingVoiceText = useRef('');
@@ -64,7 +66,48 @@ const SymptomChat = () => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isAnalyzing, isChatting]);
 
-  const isBlocked = isAnalyzing || isChatting || voice.isTranscribing;
+  const isBlocked = isAnalyzing || isChatting || voice.isTranscribing || isAnalyzingImage;
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || isBlocked) return;
+    // Reset input so same file can be re-selected
+    e.target.value = '';
+
+    const objectUrl = URL.createObjectURL(file);
+    // Show the image in chat immediately
+    dispatch(addMessage({
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: '📷 फोटो पठाइरहेको छु — विश्लेषण गर्दैछु...',
+      imageUrl: objectUrl,
+      timestamp: new Date().toISOString(),
+    }));
+
+    setIsAnalyzingImage(true);
+    try {
+      const context = messages.filter(m => m.role === 'user').map(m => m.content).join('. ');
+      const result  = await analyzeImage(file, 'symptom', context);
+      const description = (result.raw_response as string) ?? JSON.stringify(result);
+
+      // Add AI's visual description as a follow-up user context message
+      dispatch(addMessage({
+        id: crypto.randomUUID(),
+        role: 'user',
+        content: `Image shows: ${description}`,
+        timestamp: new Date().toISOString(),
+      }));
+    } catch {
+      dispatch(addMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: 'फोटो विश्लेषण गर्न सकिएन। कृपया पुनः प्रयास गर्नुहोस्।',
+        timestamp: new Date().toISOString(),
+      }));
+    } finally {
+      setIsAnalyzingImage(false);
+    }
+  }
 
   async function sendMessage(text: string) {
     const trimmed = text.trim();
@@ -195,6 +238,13 @@ const SymptomChat = () => {
               </div>
             )}
             <div className={`max-w-[80%] ${msg.role === 'user' ? 'items-end' : 'items-start'} flex flex-col`}>
+              {msg.imageUrl && (
+                <img
+                  src={msg.imageUrl}
+                  alt="uploaded symptom"
+                  className="w-40 h-40 object-cover rounded-2xl mb-1 border border-white/30 shadow"
+                />
+              )}
               <div
                 className={`p-3.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${msg.role === 'user'
                     ? 'bg-primary-500 text-white rounded-tr-sm'
@@ -273,8 +323,17 @@ const SymptomChat = () => {
           ))}
         </div>
 
-        {/* Text + voice input */}
+        {/* Text + voice + camera input */}
         <div className="flex items-center gap-2">
+          {/* Hidden file input for camera/gallery */}
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageUpload}
+          />
+
           <button
             onClick={handleVoiceToggle}
             disabled={!voice.isSupported || isBlocked}
@@ -288,6 +347,20 @@ const SymptomChat = () => {
             title={voice.isTranscribing ? 'प्रक्रियागत...' : voice.isListening ? 'रोक्नुहोस्' : 'बोल्नुहोस्'}
           >
             {voice.isTranscribing ? <RefreshCw size={18} className="animate-spin" /> : voice.isListening ? <MicOff size={18} /> : <Mic size={18} />}
+          </button>
+
+          {/* Camera / image upload button */}
+          <button
+            onClick={() => imageInputRef.current?.click()}
+            disabled={isBlocked}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-colors shadow-sm ${
+              isAnalyzingImage
+                ? 'bg-orange-500 text-white animate-pulse'
+                : 'bg-orange-400 text-white hover:bg-orange-500'
+            } disabled:opacity-40`}
+            title="फोटो पठाउनुहोस्"
+          >
+            {isAnalyzingImage ? <RefreshCw size={18} className="animate-spin" /> : <Camera size={18} />}
           </button>
 
           <div className="relative flex-1">

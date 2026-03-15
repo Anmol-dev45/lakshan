@@ -79,6 +79,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  imageUrl?: string;   // object URL for display — not sent to AI
 }
 
 // ─── Health history record (one per consultation session) ─────────────────────

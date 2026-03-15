@@ -55,6 +55,14 @@ Patient context: ${context || 'none provided'}
 Describe observable clinical features only: color, size, pattern, texture.
 Do not diagnose. Describe observations only.
 End with: 'Please consult a licensed doctor for proper evaluation.'`,
+
+    symptom: `You are a clinical image assistant for a health app in rural Nepal.
+Patient's reported symptom context: ${context || 'none provided'}
+Analyze this symptom image (skin, wound, rash, swelling, eye, tongue, nail, etc.).
+Describe ONLY what is visually observable: location on body, color, size (approximate), pattern, texture, any discharge or swelling.
+Keep your response to 2-3 plain sentences. Do NOT diagnose or name a specific disease.
+End your response with: "Please show this to a doctor for proper examination."
+Respond in English.`,
   };
 
   const textPrompt = prompts[mode] || prompts.general;

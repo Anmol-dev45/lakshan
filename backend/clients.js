@@ -12,6 +12,7 @@ const client = new AzureOpenAI({
 
 const MODELS = {
   gpt:      process.env.GPT_MODEL      || 'gpt-5.4',
+  audio:    process.env.AUDIO_MODEL    || 'gpt-audio-1.5',
   image:    process.env.IMAGE_MODEL    || 'gpt-image-1.5',
   stt:      process.env.STT_MODEL      || 'gpt-4o-transcribe',
   tts:      process.env.TTS_DEPLOYMENT || 'tts',
