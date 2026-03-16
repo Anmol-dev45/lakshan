@@ -1,25 +1,135 @@
-'use strict';
-const express = require('express');
-const multer  = require('multer');
-const router  = express.Router();
-const { client, MODELS } = require('../clients');
-const { gptLimiter }     = require('../rateLimiter');
+"use strict";
+const express = require("express");
+const multer = require("multer");
+const router = express.Router();
+const { client, MODELS } = require("../clients");
+const { gptLimiter } = require("../rateLimiter");
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits:  { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
 });
+
+function extractFirstJsonObject(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  const cleaned = raw.replace(/```json|```/gi, "").trim();
+  const match = cleaned.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+}
+
+function toStringOrNull(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "string") return v.trim() || null;
+  if (typeof v === "number") return String(v);
+  return null;
+}
+
+function normalizeStatus(status) {
+  const s = String(status || "")
+    .trim()
+    .toLowerCase();
+  if (s === "high" || s === "low" || s === "normal") return s;
+  if (["elevated", "above", "above normal", "abnormal-high"].includes(s))
+    return "high";
+  if (["below", "below normal", "abnormal-low", "reduced"].includes(s))
+    return "low";
+  return "attention";
+}
+
+function normalizeReportResult(parsed, raw) {
+  const metrics = Array.isArray(parsed?.metrics) ? parsed.metrics : [];
+  const normalizedMetrics = metrics
+    .map((m) => ({
+      name:
+        toStringOrNull(m?.name) ||
+        toStringOrNull(m?.plain_name) ||
+        "UNKNOWN_TEST",
+      plain_name:
+        toStringOrNull(m?.plain_name) ||
+        toStringOrNull(m?.name) ||
+        "UNKNOWN_TEST",
+      value: toStringOrNull(m?.value) || "डाटा स्पष्ट देखिएन",
+      unit: toStringOrNull(m?.unit) || "",
+      reference_range:
+        toStringOrNull(m?.reference_range) || "डाटा स्पष्ट देखिएन",
+      status: normalizeStatus(m?.status),
+      explanation:
+        toStringOrNull(m?.explanation) ||
+        "यो नतिजाको स्पष्ट व्याख्या प्राप्त भएन।",
+      nepali_tip:
+        toStringOrNull(m?.nepali_tip) ||
+        "स्पष्ट रिपोर्ट लिएर स्वास्थ्यकर्मीसँग परामर्श गर्नुहोस्।",
+      what_it_measures: toStringOrNull(m?.what_it_measures) || undefined,
+      what_your_result_means:
+        toStringOrNull(m?.what_your_result_means) || undefined,
+      how_you_might_feel: toStringOrNull(m?.how_you_might_feel) || undefined,
+      severity_levels: m?.severity_levels || undefined,
+      if_not_treated: toStringOrNull(m?.if_not_treated) || undefined,
+    }))
+    .filter((m) => m.name && m.plain_name);
+
+  return {
+    report_type: toStringOrNull(parsed?.report_type) || "Medical Report",
+    report_date: toStringOrNull(parsed?.report_date),
+    patient_info: {
+      name: toStringOrNull(parsed?.patient_info?.name),
+      age: toStringOrNull(parsed?.patient_info?.age),
+    },
+    what_this_means_for_you:
+      toStringOrNull(parsed?.what_this_means_for_you) ||
+      "रिपोर्ट पढिएको छ, तर केही विवरण स्पष्ट छैन। कृपया स्पष्ट फोटो वा स्क्यान पुनः अपलोड गर्नुहोस्।",
+    urgency: ["routine", "soon", "urgent"].includes(
+      String(parsed?.urgency || "").toLowerCase(),
+    )
+      ? String(parsed?.urgency).toLowerCase()
+      : "soon",
+    urgency_reason:
+      toStringOrNull(parsed?.urgency_reason) ||
+      "केही नतिजा थप ध्यानका लागि पुनः जाँच आवश्यक हुन सक्छ।",
+    metrics: normalizedMetrics,
+    abnormal_findings: Array.isArray(parsed?.abnormal_findings)
+      ? parsed.abnormal_findings
+      : undefined,
+    lifestyle_advice: Array.isArray(parsed?.lifestyle_advice)
+      ? parsed.lifestyle_advice
+      : undefined,
+    questions_for_doctor: Array.isArray(parsed?.questions_for_doctor)
+      ? parsed.questions_for_doctor
+      : undefined,
+    watch_for: Array.isArray(parsed?.watch_for) ? parsed.watch_for : undefined,
+    doctor_note:
+      toStringOrNull(parsed?.doctor_note) ||
+      "यो विश्लेषण सहायक जानकारी मात्र हो। नजिकैको स्वास्थ्यकर्मीलाई रिपोर्ट देखाएर पुष्टि गर्नुहोस्।",
+    disclaimer:
+      toStringOrNull(parsed?.disclaimer) ||
+      "यो जानकारी केवल शैक्षिक उद्देश्यको लागि हो। कृपया आफ्नो डाक्टरसँग परामर्श लिनुहोस्।",
+    extraction_confidence: ["high", "medium", "low"].includes(
+      String(parsed?.extraction_confidence || "").toLowerCase(),
+    )
+      ? String(parsed?.extraction_confidence).toLowerCase()
+      : "medium",
+    unreadable_fields: Array.isArray(parsed?.unreadable_fields)
+      ? parsed.unreadable_fields
+      : [],
+    raw_response: raw,
+  };
+}
 
 // POST /api/vision  — analyze uploaded medical report or medicine photo
 // Multipart: { image, context?, mode? }
 // mode: "report" | "medicine" | "general"
-router.post('/', upload.single('image'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'image file required' });
+router.post("/", upload.single("image"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "image file required" });
 
-  const context  = req.body.context || '';
-  const mode     = req.body.mode || 'report';
+  const context = req.body.context || "";
+  const mode = req.body.mode || "report";
   const mimeType = req.file.mimetype;
-  const b64Image = req.file.buffer.toString('base64');
+  const b64Image = req.file.buffer.toString("base64");
 
   const prompts = {
     report: `You are an AI medical report interpreter for patients in rural Nepal.
@@ -30,10 +140,17 @@ Respond ONLY with a single valid JSON object. No markdown. No text outside the J
 
 STEPS:
 1. Extract every lab test visible in the image (test name, measured value, reference range)
-2. Compare each value with its reference range → determine status: "normal", "high", or "low"
+2. Compare each value with its reference range -> determine status: "normal", "high", or "low"
 3. Write a clear explanation in simple Nepali for each test
 4. Write an overall Nepali summary
 5. Write a recommendation in Nepali
+
+RELIABILITY RULES (VERY IMPORTANT):
+- Do not guess numbers. If uncertain, write "डाटा स्पष्ट देखिएन".
+- Preserve units exactly as seen in report.
+- Keep one metric object per visible test row in the report.
+- If report has multiple panels, include all visible tests from all panels.
+- If image is blurred or cut, list missing fields in "unreadable_fields".
 
 OUTPUT SCHEMA (follow exactly):
 {
@@ -61,6 +178,9 @@ OUTPUT SCHEMA (follow exactly):
 
   "doctor_note": "Recommendation in Nepali. If most normal: 'तपाईंको अधिकांश नतिजा सामान्य देखिन्छ। तर नियमित जाँचका लागि नजिकैको स्वास्थ्य चौकीमा जानुहोस्।' If abnormal: 'केही नतिजा असामान्य देखिएकोले कृपया ३ दिनभित्र नजिकैको स्वास्थ्य चौकीमा यो रिपोर्ट लिएर जानुहोस्।'",
 
+  "extraction_confidence": "high | medium | low",
+  "unreadable_fields": ["field 1", "field 2"],
+
   "disclaimer": "यो जानकारी केवल शैक्षिक उद्देश्यको लागि हो। कृपया आफ्नो डाक्टरसँग परामर्श लिनुहोस्। (For educational purposes only — not a medical diagnosis.)"
 }
 
@@ -87,13 +207,13 @@ Analyze this medicine/tablet/package image and respond with a JSON object:
 If the medicine cannot be identified, set identified: false and explain why.`,
 
     general: `You are a clinical image assessment assistant.
-Patient context: ${context || 'none provided'}
+Patient context: ${context || "none provided"}
 Describe observable clinical features only: color, size, pattern, texture.
 Do not diagnose. Describe observations only.
 End with: 'Please consult a licensed doctor for proper evaluation.'`,
 
     symptom: `You are a clinical image assistant for a health app in rural Nepal.
-Patient's reported symptom context: ${context || 'none provided'}
+Patient's reported symptom context: ${context || "none provided"}
 Analyze this symptom image (skin, wound, rash, swelling, eye, tongue, nail, etc.).
 Describe ONLY what is visually observable: location on body, color, size (approximate), pattern, texture, any discharge or swelling.
 Keep your response to 2-3 plain sentences. Do NOT diagnose or name a specific disease.
@@ -106,29 +226,31 @@ Respond in English.`,
   try {
     await gptLimiter.wait();
     const response = await client.chat.completions.create({
-      model:      MODELS.gpt,
-      max_completion_tokens: mode === 'report' ? 2000 : 800,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image_url',
-            image_url: { url: `data:${mimeType};base64,${b64Image}`, detail: 'high' },
-          },
-          { type: 'text', text: textPrompt },
-        ],
-      }],
+      model: MODELS.gpt,
+      max_completion_tokens: mode === "report" ? 2000 : 800,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${b64Image}`,
+                detail: "high",
+              },
+            },
+            { type: "text", text: textPrompt },
+          ],
+        },
+      ],
     });
 
     const raw = response.choices[0].message.content;
-    // Try to parse JSON response, fallback to raw text
-    let result;
-    try {
-      const match = raw.replace(/```json|```/g, '').trim().match(/\{[\s\S]*\}/);
-      result = match ? JSON.parse(match[0]) : { raw_response: raw };
-    } catch {
-      result = { raw_response: raw };
-    }
+    const parsed = extractFirstJsonObject(raw);
+    const result =
+      mode === "report"
+        ? normalizeReportResult(parsed || {}, raw)
+        : parsed || { raw_response: raw };
 
     res.json({ mode, result });
   } catch (err) {

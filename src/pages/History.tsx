@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/Header';
-import { Activity, Calendar, Clock, ChevronRight, AlertCircle, Trash2 } from 'lucide-react';
+import { Activity, Calendar, Clock, ChevronRight, AlertCircle, Trash2, Loader2 } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../hooks/useStore';
-import { clearHistory } from '../store/slices/historySlice';
+import { clearHistoryEverywhere, deleteRecordEverywhere } from '../store/slices/historySlice';
 import { setDiagnosis } from '../store/slices/symptomSlice';
 import { RISK_LABELS } from '../types/health';
 import type { RiskLevel } from '../types/health';
@@ -26,6 +26,7 @@ const History = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const records = useAppSelector((s) => s.history.records);
+  const syncing = useAppSelector((s) => s.history.syncing);
   const lang = useAppSelector((s) => s.settings.language);
   const t = useT();
 
@@ -35,6 +36,16 @@ const History = () => {
       dispatch(setDiagnosis(record.diagnosis));
       navigate('/diagnosis');
     }
+  }
+
+  function handleClearHistory() {
+    const ok = window.confirm('सबै इतिहास हटाउन चाहनुहुन्छ?');
+    if (!ok) return;
+    dispatch(clearHistoryEverywhere() as never);
+  }
+
+  function handleDeleteRecord(id: string) {
+    dispatch(deleteRecordEverywhere(id) as never);
   }
 
   return (
@@ -68,13 +79,20 @@ const History = () => {
           </h2>
           {records.length > 0 && (
             <button
-              onClick={() => dispatch(clearHistory())}
+              onClick={handleClearHistory}
               className="flex items-center gap-1 text-xs text-danger-500 hover:text-danger-700 transition-colors"
             >
               <Trash2 size={13} /> {t('histClearAll')}
             </button>
           )}
         </div>
+
+        {syncing && (
+          <div className="mb-3 bg-primary-50 border border-primary-100 text-primary-700 rounded-xl px-3 py-2 text-xs flex items-center gap-2">
+            <Loader2 size={14} className="animate-spin" />
+            रेकर्डहरू Supabase सँग sync हुँदैछन्...
+          </div>
+        )}
 
         {records.length === 0 ? (
           <div className="bg-surface-50 rounded-2xl p-8 flex flex-col items-center text-center border border-surface-200 border-dashed">
@@ -111,7 +129,16 @@ const History = () => {
                       </span>
                     </div>
 
-                    <h3 className="font-bold text-slate-800 text-base mb-1.5 capitalize">{record.primarySymptom}</h3>
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <h3 className="font-bold text-slate-800 text-base capitalize">{record.primarySymptom}</h3>
+                      <button
+                        onClick={() => handleDeleteRecord(record.id)}
+                        className="w-7 h-7 rounded-full border border-danger-200 text-danger-500 flex items-center justify-center hover:bg-danger-50 transition-colors shrink-0"
+                        title="Delete record"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
 
                     <div className="flex flex-wrap gap-1 mb-2.5">
                       {record.symptoms.slice(0, 4).map((s) => (

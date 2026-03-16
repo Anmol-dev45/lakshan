@@ -5,11 +5,11 @@ import type { RealtimeStatus } from '../hooks/useRealtimeVoice';
 import { useT } from '../i18n/useT';
 
 const STATUS_COLOR: Record<RealtimeStatus, string> = {
-  idle:       'text-gray-500',
+  idle: 'text-gray-500',
   connecting: 'text-yellow-600',
-  ready:      'text-green-600',
-  speaking:   'text-primary-600',
-  error:      'text-red-600',
+  ready: 'text-green-600',
+  speaking: 'text-primary-600',
+  error: 'text-red-600',
 };
 
 export default function LiveConsultation() {
@@ -17,11 +17,11 @@ export default function LiveConsultation() {
   const t = useT();
 
   const STATUS_LABEL: Record<RealtimeStatus, string> = {
-    idle:       t('liveIdle'),
+    idle: t('liveIdle'),
     connecting: t('liveConnecting'),
-    ready:      t('liveReady'),
-    speaking:   t('liveSpeaking'),
-    error:      t('liveError'),
+    ready: t('liveReady'),
+    speaking: t('liveSpeaking'),
+    error: t('liveError'),
   };
 
   const { status, aiText, userText, isMuted, error, connect, disconnect, toggleMute } =
@@ -64,10 +64,10 @@ export default function LiveConsultation() {
             isActive
               ? 'bg-primary-600 cursor-default'
               : isConnecting
-              ? 'bg-yellow-400 cursor-wait'
-              : status === 'error'
-              ? 'bg-red-500 hover:bg-red-600 cursor-pointer'
-              : 'bg-primary-500 hover:bg-primary-600 active:scale-95 cursor-pointer',
+                ? 'bg-yellow-400 cursor-wait'
+                : status === 'error'
+                  ? 'bg-red-500 hover:bg-red-600 cursor-pointer'
+                  : 'bg-primary-500 hover:bg-primary-600 active:scale-95 cursor-pointer',
           ].join(' ')}
         >
           {/* Pulse rings when listening */}
@@ -136,7 +136,7 @@ export default function LiveConsultation() {
           >
             {isMuted
               ? <MicOff size={22} className="text-white" />
-              : <Mic    size={22} className="text-gray-600" />}
+              : <Mic size={22} className="text-gray-600" />}
           </button>
 
           {/* Hang up */}

@@ -1,6 +1,11 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import type { HealthRecord } from '../../types/health';
-import { saveHealthRecord, fetchHealthRecords } from '../../services/dbService';
+import {
+  saveHealthRecord,
+  fetchHealthRecords,
+  deleteHealthRecord,
+  deleteAllHealthRecords,
+} from '../../services/dbService';
 
 const LS_KEY = 'health_history_v2';
 
@@ -48,6 +53,10 @@ export const historySlice = createSlice({
     setSyncing(state, action: PayloadAction<boolean>) {
       state.syncing = action.payload;
     },
+    removeRecord(state, action: PayloadAction<string>) {
+      state.records = state.records.filter((r) => r.id !== action.payload);
+      saveToStorage(state.records);
+    },
     clearHistory(state) {
       state.records = [];
       localStorage.removeItem(LS_KEY);
@@ -55,7 +64,7 @@ export const historySlice = createSlice({
   },
 });
 
-export const { addRecord, setRecords, setSyncing, clearHistory } = historySlice.actions;
+export const { addRecord, setRecords, setSyncing, removeRecord, clearHistory } = historySlice.actions;
 export default historySlice.reducer;
 
 // ─── Thunks ───────────────────────────────────────────────────────────────────
@@ -86,5 +95,25 @@ export function loadRecordsFromSupabase() {
     } finally {
       dispatch(setSyncing(false));
     }
+  };
+}
+
+export function deleteRecordEverywhere(id: string) {
+  return async (dispatch: Dispatch, getState: GetState) => {
+    dispatch(removeRecord(id));
+
+    const userId = getState().auth.user?.id;
+    if (!userId) return;
+    await deleteHealthRecord(id);
+  };
+}
+
+export function clearHistoryEverywhere() {
+  return async (dispatch: Dispatch, getState: GetState) => {
+    dispatch(clearHistory());
+
+    const userId = getState().auth.user?.id;
+    if (!userId) return;
+    await deleteAllHealthRecords(userId);
   };
 }

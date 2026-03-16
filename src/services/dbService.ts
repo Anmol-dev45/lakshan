@@ -64,6 +64,11 @@ export async function deleteHealthRecord(id: string): Promise<void> {
   if (error) console.error('[dbService] Delete error:', error.message);
 }
 
+export async function deleteAllHealthRecords(userId: string): Promise<void> {
+  const { error } = await supabase.from('health_records').delete().eq('user_id', userId);
+  if (error) console.error('[dbService] Delete all error:', error.message);
+}
+
 // ─── Save conversation session (server-side storage as guide recommends) ──────
 
 export async function saveConversationSession(
@@ -90,17 +95,17 @@ function rowToHealthRecord(row: Record<string, unknown>): HealthRecord {
     id: row.id as string,
     timestamp: row.created_at as string,
     extractedSymptoms: {
-      symptoms:            (row.symptoms as string[]) ?? [],
-      onset:               (row.onset as string) ?? 'not specified',
-      duration:            (row.duration as string) ?? 'not specified',
-      severity:            (row.severity as 'mild' | 'moderate' | 'severe') ?? 'moderate',
-      character:           (row.character as string) ?? 'not specified',
+      symptoms: (row.symptoms as string[]) ?? [],
+      onset: (row.onset as string) ?? 'not specified',
+      duration: (row.duration as string) ?? 'not specified',
+      severity: (row.severity as 'mild' | 'moderate' | 'severe') ?? 'moderate',
+      character: (row.character as string) ?? 'not specified',
       aggravating_factors: (row.aggravating_factors as string[]) ?? [],
-      relieving_factors:   (row.relieving_factors as string[]) ?? [],
-      age:                 (row.age as number | null) ?? null,
-      sex:                 (row.sex as string | null) ?? null,
+      relieving_factors: (row.relieving_factors as string[]) ?? [],
+      age: (row.age as number | null) ?? null,
+      sex: (row.sex as string | null) ?? null,
       existing_conditions: (row.existing_conditions as string[]) ?? [],
-      medications:         (row.medications as string[]) ?? [],
+      medications: (row.medications as string[]) ?? [],
     },
     diseaseRanking: (row.disease_ranking as DiagnosisResult['diseaseRanking']) ?? [],
     riskLevel: row.risk_level as DiagnosisResult['riskLevel'],

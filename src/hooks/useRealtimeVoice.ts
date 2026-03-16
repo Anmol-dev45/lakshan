@@ -1,7 +1,32 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-const BACKEND_WS = (import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000')
-  .replace(/^http/, 'ws');
+function resolveBackendWsBase(): string {
+  const configured = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() ?? '';
+
+  // If configured explicitly, use it.
+  if (configured) {
+    if (configured.startsWith('ws://') || configured.startsWith('wss://')) {
+      const wsUrl = new URL(configured);
+      return `${wsUrl.protocol}//${wsUrl.host}`;
+    }
+
+    // If an HTTP URL includes a path like /api, keep only origin for websocket base.
+    const httpUrl = new URL(configured);
+    const wsProto = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${wsProto}//${httpUrl.host}`;
+  }
+
+  // Local dev: connect directly to backend port to avoid proxy/path mismatches.
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'ws://localhost:8000';
+  }
+
+  // Default to same-origin /api proxy for deployed environments.
+  const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${wsProto}//${window.location.host}`;
+}
+
+const BACKEND_WS = resolveBackendWsBase();
 
 export type RealtimeStatus =
   | 'idle'
@@ -28,9 +53,9 @@ export interface RealtimeVoiceActions {
 
 function downsampleAndEncode(float32: Float32Array, fromRate: number): string {
   const TARGET = 24000;
-  const ratio  = fromRate / TARGET;
+  const ratio = fromRate / TARGET;
   const length = Math.floor(float32.length / ratio);
-  const pcm16  = new Int16Array(length);
+  const pcm16 = new Int16Array(length);
   for (let i = 0; i < length; i++) {
     const s = Math.max(-1, Math.min(1, float32[Math.floor(i * ratio)]));
     pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
@@ -42,11 +67,11 @@ function downsampleAndEncode(float32: Float32Array, fromRate: number): string {
 }
 
 function base64ToFloat32(b64: string): Float32Array {
-  const bin   = atob(b64);
+  const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   const int16 = new Int16Array(bytes.buffer);
-  const f32   = new Float32Array(int16.length);
+  const f32 = new Float32Array(int16.length);
   for (let i = 0; i < int16.length; i++) f32[i] = int16[i] / 32768.0;
   return f32;
 }
@@ -54,21 +79,40 @@ function base64ToFloat32(b64: string): Float32Array {
 // ── Hook ────────────────────────────────────────────────────────────────────
 
 export function useRealtimeVoice(): RealtimeVoiceState & RealtimeVoiceActions {
-  const [status,   setStatus]   = useState<RealtimeStatus>('idle');
-  const [aiText,   setAiText]   = useState('');
+  const [status, setStatus] = useState<RealtimeStatus>('idle');
+  const [aiText, setAiText] = useState('');
   const [userText, setUserText] = useState('');
-  const [isMuted,  setIsMuted]  = useState(false);
-  const [error,    setError]    = useState<string | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const wsRef          = useRef<WebSocket | null>(null);
-  const audioCtxRef    = useRef<AudioContext | null>(null);
-  const processorRef   = useRef<ScriptProcessorNode | null>(null);
-  const streamRef      = useRef<MediaStream | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const statusRef = useRef<RealtimeStatus>('idle');
+  const hasErrorRef = useRef(false);
+  const manualDisconnectRef = useRef(false);
+  const reconnectAttemptsRef = useRef(0);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const micStartedRef = useRef(false);
+  const connectTimeoutRef = useRef<number | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const nextPlayTimeRef = useRef<number>(0);
-  const isMutedRef     = useRef(false);
+  const isMutedRef = useRef(false);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   // ── Cleanup ──────────────────────────────────────────────────────────────
   const cleanup = useCallback(() => {
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    if (connectTimeoutRef.current !== null) {
+      window.clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = null;
+    }
     processorRef.current?.disconnect();
     processorRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -106,7 +150,7 @@ export function useRealtimeVoice(): RealtimeVoiceState & RealtimeVoiceActions {
     audioCtxRef.current = ctx;
     nextPlayTimeRef.current = ctx.currentTime;
 
-    const source    = ctx.createMediaStreamSource(stream);
+    const source = ctx.createMediaStreamSource(stream);
     const processor = ctx.createScriptProcessor(4096, 1, 1);
     processorRef.current = processor;
 
@@ -116,7 +160,7 @@ export function useRealtimeVoice(): RealtimeVoiceState & RealtimeVoiceActions {
       const raw = e.inputBuffer.getChannelData(0);
       const b64 = downsampleAndEncode(raw, ctx.sampleRate);
       ws.send(JSON.stringify({
-        type:  'input_audio_buffer.append',
+        type: 'input_audio_buffer.append',
         audio: b64,
       }));
     };
@@ -127,7 +171,13 @@ export function useRealtimeVoice(): RealtimeVoiceState & RealtimeVoiceActions {
 
   // ── Connect ───────────────────────────────────────────────────────────────
   const connect = useCallback(() => {
-    if (status !== 'idle' && status !== 'error') return;
+    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    manualDisconnectRef.current = false;
+    hasErrorRef.current = false;
+    micStartedRef.current = false;
     setStatus('connecting');
     setAiText('');
     setUserText('');
@@ -136,8 +186,25 @@ export function useRealtimeVoice(): RealtimeVoiceState & RealtimeVoiceActions {
     const ws = new WebSocket(`${BACKEND_WS}/api/realtime`);
     wsRef.current = ws;
 
+    const startMicIfNeeded = () => {
+      if (micStartedRef.current) return;
+      micStartedRef.current = true;
+      setStatus('ready');
+      startMic(ws).catch((err: Error) => {
+        setError('माइक्रोफोन अनुमति दिनुहोस्।');
+        setStatus('error');
+        console.error('[Realtime] mic error:', err);
+      });
+    };
+
     ws.onopen = () => {
-      console.log('[Realtime] WebSocket open — waiting for session.created');
+      console.log('[Realtime] WebSocket open — waiting for session.created/session.updated');
+      connectTimeoutRef.current = window.setTimeout(() => {
+        hasErrorRef.current = true;
+        setError('Realtime session सुरु भएन। backend realtime config जाँच्नुहोस्।');
+        setStatus('error');
+        cleanup();
+      }, 15000);
     };
 
     ws.onmessage = (evt) => {
@@ -147,14 +214,13 @@ export function useRealtimeVoice(): RealtimeVoiceState & RealtimeVoiceActions {
 
       const type = data.type as string;
 
-      if (type === 'session.created' || type === 'session.updated') {
-        setStatus('ready');
-        // Start mic after session is configured
-        startMic(ws).catch((err: Error) => {
-          setError('माइक्रोफोन अनुमति दिनुहोस्।');
-          setStatus('error');
-          console.error('[Realtime] mic error:', err);
-        });
+      if (type === 'session.created' || type === 'session.updated' || type === 'proxy.azure.open') {
+        reconnectAttemptsRef.current = 0;
+        if (connectTimeoutRef.current !== null) {
+          window.clearTimeout(connectTimeoutRef.current);
+          connectTimeoutRef.current = null;
+        }
+        startMicIfNeeded();
       }
 
       if (type === 'response.audio.delta') {
@@ -182,7 +248,11 @@ export function useRealtimeVoice(): RealtimeVoiceState & RealtimeVoiceActions {
       }
 
       if (type === 'error') {
-        const msg = (data as { message?: string }).message ?? 'Unknown error';
+        hasErrorRef.current = true;
+        const msg =
+          (data as { message?: string }).message ||
+          (data.error as { message?: string } | undefined)?.message ||
+          'Unknown error';
         setError(msg);
         setStatus('error');
         cleanup();
@@ -190,19 +260,51 @@ export function useRealtimeVoice(): RealtimeVoiceState & RealtimeVoiceActions {
     };
 
     ws.onerror = () => {
-      setError('Backend सँग जोडिन सकिएन। Backend चलाउनुहोस्।');
+      hasErrorRef.current = true;
+      if (connectTimeoutRef.current !== null) {
+        window.clearTimeout(connectTimeoutRef.current);
+        connectTimeoutRef.current = null;
+      }
+      setError('Live voice backend सँग जोडिन सकेन। backend server चलिरहेको छ र /api/realtime उपलब्ध छ कि जाँच्नुहोस्।');
       setStatus('error');
       cleanup();
     };
 
     ws.onclose = () => {
-      if (status !== 'error') setStatus('idle');
+      if (connectTimeoutRef.current !== null) {
+        window.clearTimeout(connectTimeoutRef.current);
+        connectTimeoutRef.current = null;
+      }
       cleanup();
+
+      if (manualDisconnectRef.current) {
+        setStatus('idle');
+        setError(null);
+      } else if (statusRef.current === 'connecting' && !hasErrorRef.current) {
+        setStatus('error');
+        setError('Realtime session बन्द भयो। backend realtime credentials जाँच्नुहोस्।');
+      } else if ((statusRef.current === 'ready' || statusRef.current === 'speaking') && !hasErrorRef.current) {
+        if (reconnectAttemptsRef.current < 2) {
+          reconnectAttemptsRef.current += 1;
+          setStatus('connecting');
+          setError(`Live connection drop भयो। Reconnecting... (${reconnectAttemptsRef.current}/2)`);
+          reconnectTimerRef.current = window.setTimeout(() => {
+            connect();
+          }, 1000 * reconnectAttemptsRef.current);
+        } else {
+          setStatus('error');
+          setError('Live connection drop भयो। फेरि mic थिचेर reconnect गर्नुहोस्।');
+        }
+      } else if (statusRef.current !== 'error') {
+        setStatus('idle');
+      }
     };
-  }, [status, startMic, playChunk, cleanup]);
+  }, [startMic, playChunk, cleanup]);
 
   // ── Disconnect ────────────────────────────────────────────────────────────
   const disconnect = useCallback(() => {
+    manualDisconnectRef.current = true;
+    reconnectAttemptsRef.current = 0;
     cleanup();
     setStatus('idle');
     setAiText('');
