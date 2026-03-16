@@ -1,327 +1,391 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-function resolveBackendWsBase(): string {
-  const configured = (import.meta.env.VITE_BACKEND_URL as string | undefined)?.trim() ?? '';
+const REALTIME_MODEL = 'gpt-realtime-1.5';
 
-  // If configured explicitly, use it.
-  if (configured) {
-    if (configured.startsWith('ws://') || configured.startsWith('wss://')) {
-      const wsUrl = new URL(configured);
-      return `${wsUrl.protocol}//${wsUrl.host}`;
-    }
+type SessionResponse = {
+    clientSecret?: string;
+    error?: string;
+    details?: string;
+    realtimeUrl?: string;
+};
 
-    // If an HTTP URL includes a path like /api, keep only origin for websocket base.
-    const httpUrl = new URL(configured);
-    const wsProto = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${wsProto}//${httpUrl.host}`;
-  }
-
-  // Local dev: connect directly to backend port to avoid proxy/path mismatches.
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'ws://localhost:8000';
-  }
-
-  // Default to same-origin /api proxy for deployed environments.
-  const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${wsProto}//${window.location.host}`;
-}
-
-const BACKEND_WS = resolveBackendWsBase();
+type RealtimeServerEvent = {
+    type?: string;
+    delta?: string;
+    transcript?: string;
+    response?: {
+        output?: Array<{
+            content?: Array<{
+                text?: string;
+                transcript?: string;
+            }>;
+        }>;
+    };
+    item?: {
+        content?: Array<{
+            text?: string;
+            transcript?: string;
+        }>;
+    };
+    error?: {
+        message?: string;
+    };
+    message?: string;
+};
 
 export type RealtimeStatus =
-  | 'idle'
-  | 'connecting'
-  | 'ready'
-  | 'speaking'
-  | 'error';
+    | 'idle'
+    | 'connecting'
+    | 'ready'
+    | 'speaking'
+    | 'error';
 
 export interface RealtimeVoiceState {
-  status: RealtimeStatus;
-  aiText: string;          // AI response text (streaming)
-  userText: string;        // User speech transcription
-  isMuted: boolean;
-  error: string | null;
+    status: RealtimeStatus;
+    aiText: string;
+    userText: string;
+    isMuted: boolean;
+    error: string | null;
 }
 
 export interface RealtimeVoiceActions {
-  connect: () => void;
-  disconnect: () => void;
-  toggleMute: () => void;
+    connect: () => void;
+    disconnect: () => void;
+    toggleMute: () => void;
 }
 
-// ── PCM helpers ─────────────────────────────────────────────────────────────
+function extractText(event: RealtimeServerEvent): string {
+    if (typeof event.delta === 'string') return event.delta;
+    if (typeof event.transcript === 'string') return event.transcript;
 
-function downsampleAndEncode(float32: Float32Array, fromRate: number): string {
-  const TARGET = 24000;
-  const ratio = fromRate / TARGET;
-  const length = Math.floor(float32.length / ratio);
-  const pcm16 = new Int16Array(length);
-  for (let i = 0; i < length; i++) {
-    const s = Math.max(-1, Math.min(1, float32[Math.floor(i * ratio)]));
-    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-  }
-  const bytes = new Uint8Array(pcm16.buffer);
-  let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin);
+    const itemText = event.item?.content
+        ?.map((content) => content.transcript ?? content.text ?? '')
+        .join('')
+        .trim();
+    if (itemText) return itemText;
+
+    const responseText = event.response?.output
+        ?.flatMap((output) => output.content ?? [])
+        .map((content) => content.transcript ?? content.text ?? '')
+        .join('')
+        .trim();
+    if (responseText) return responseText;
+
+    return '';
 }
 
-function base64ToFloat32(b64: string): Float32Array {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const int16 = new Int16Array(bytes.buffer);
-  const f32 = new Float32Array(int16.length);
-  for (let i = 0; i < int16.length; i++) f32[i] = int16[i] / 32768.0;
-  return f32;
+function toFriendlyError(err: unknown): string {
+    if (err instanceof DOMException && err.name === 'NotAllowedError') {
+        return 'माइक्रोफोन अनुमति अस्वीकृत भयो। ब्राउजर सेटिङमा mic allow गर्नुहोस्।';
+    }
+    if (err instanceof DOMException && err.name === 'NotFoundError') {
+        return 'माइक्रोफोन device भेटिएन। कृपया mic जाँच्नुहोस्।';
+    }
+    if (err instanceof Error && err.message) {
+        if (err.message === 'Failed to fetch') {
+            return 'Backend सँग जडान भएन। backend server (port 8000) चलिरहेको छ कि जाँच्नुहोस्।';
+        }
+        return err.message;
+    }
+    return 'Realtime voice मा अज्ञात त्रुटि भयो।';
 }
-
-// ── Hook ────────────────────────────────────────────────────────────────────
 
 export function useRealtimeVoice(): RealtimeVoiceState & RealtimeVoiceActions {
-  const [status, setStatus] = useState<RealtimeStatus>('idle');
-  const [aiText, setAiText] = useState('');
-  const [userText, setUserText] = useState('');
-  const [isMuted, setIsMuted] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+    const [status, setStatus] = useState<RealtimeStatus>('idle');
+    const [aiText, setAiText] = useState('');
+    const [userText, setUserText] = useState('');
+    const [isMuted, setIsMuted] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-  const wsRef = useRef<WebSocket | null>(null);
-  const statusRef = useRef<RealtimeStatus>('idle');
-  const hasErrorRef = useRef(false);
-  const manualDisconnectRef = useRef(false);
-  const reconnectAttemptsRef = useRef(0);
-  const reconnectTimerRef = useRef<number | null>(null);
-  const micStartedRef = useRef(false);
-  const connectTimeoutRef = useRef<number | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const nextPlayTimeRef = useRef<number>(0);
-  const isMutedRef = useRef(false);
+    const peerRef = useRef<RTCPeerConnection | null>(null);
+    const dataChannelRef = useRef<RTCDataChannel | null>(null);
+    const localStreamRef = useRef<MediaStream | null>(null);
+    const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  useEffect(() => {
-    statusRef.current = status;
-  }, [status]);
+    const statusRef = useRef<RealtimeStatus>('idle');
+    const manualDisconnectRef = useRef(false);
+    const isMutedRef = useRef(false);
+    const aiBufferRef = useRef('');
+    const userBufferRef = useRef('');
 
-  // ── Cleanup ──────────────────────────────────────────────────────────────
-  const cleanup = useCallback(() => {
-    if (reconnectTimerRef.current !== null) {
-      window.clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    if (connectTimeoutRef.current !== null) {
-      window.clearTimeout(connectTimeoutRef.current);
-      connectTimeoutRef.current = null;
-    }
-    processorRef.current?.disconnect();
-    processorRef.current = null;
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    audioCtxRef.current?.close();
-    audioCtxRef.current = null;
-    nextPlayTimeRef.current = 0;
-    if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
-      wsRef.current.close();
-    }
-    wsRef.current = null;
-  }, []);
+    useEffect(() => {
+        statusRef.current = status;
+    }, [status]);
 
-  // ── Schedule AI audio chunk for playback ─────────────────────────────────
-  const playChunk = useCallback((b64: string) => {
-    const ctx = audioCtxRef.current;
-    if (!ctx) return;
-    const f32 = base64ToFloat32(b64);
-    const buf = ctx.createBuffer(1, f32.length, 24000);
-    buf.copyToChannel(f32 as Float32Array<ArrayBuffer>, 0);
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    src.connect(ctx.destination);
-    const when = Math.max(ctx.currentTime + 0.05, nextPlayTimeRef.current);
-    src.start(when);
-    nextPlayTimeRef.current = when + buf.duration;
-  }, []);
-
-  // ── Start microphone capture and streaming ────────────────────────────────
-  const startMic = useCallback(async (ws: WebSocket) => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    streamRef.current = stream;
-
-    const ctx = new AudioContext();
-    audioCtxRef.current = ctx;
-    nextPlayTimeRef.current = ctx.currentTime;
-
-    const source = ctx.createMediaStreamSource(stream);
-    const processor = ctx.createScriptProcessor(4096, 1, 1);
-    processorRef.current = processor;
-
-    processor.onaudioprocess = (e) => {
-      if (isMutedRef.current) return;
-      if (ws.readyState !== WebSocket.OPEN) return;
-      const raw = e.inputBuffer.getChannelData(0);
-      const b64 = downsampleAndEncode(raw, ctx.sampleRate);
-      ws.send(JSON.stringify({
-        type: 'input_audio_buffer.append',
-        audio: b64,
-      }));
-    };
-
-    source.connect(processor);
-    processor.connect(ctx.destination);
-  }, []);
-
-  // ── Connect ───────────────────────────────────────────────────────────────
-  const connect = useCallback(() => {
-    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
-      return;
-    }
-
-    manualDisconnectRef.current = false;
-    hasErrorRef.current = false;
-    micStartedRef.current = false;
-    setStatus('connecting');
-    setAiText('');
-    setUserText('');
-    setError(null);
-
-    const ws = new WebSocket(`${BACKEND_WS}/api/realtime`);
-    wsRef.current = ws;
-
-    const startMicIfNeeded = () => {
-      if (micStartedRef.current) return;
-      micStartedRef.current = true;
-      setStatus('ready');
-      startMic(ws).catch((err: Error) => {
-        setError('माइक्रोफोन अनुमति दिनुहोस्।');
-        setStatus('error');
-        console.error('[Realtime] mic error:', err);
-      });
-    };
-
-    ws.onopen = () => {
-      console.log('[Realtime] WebSocket open — waiting for session.created/session.updated');
-      connectTimeoutRef.current = window.setTimeout(() => {
-        hasErrorRef.current = true;
-        setError('Realtime session सुरु भएन। backend realtime config जाँच्नुहोस्।');
-        setStatus('error');
-        cleanup();
-      }, 15000);
-    };
-
-    ws.onmessage = (evt) => {
-      let data: Record<string, unknown>;
-      try { data = JSON.parse(evt.data as string); }
-      catch { return; }
-
-      const type = data.type as string;
-
-      if (type === 'session.created' || type === 'session.updated' || type === 'proxy.azure.open') {
-        reconnectAttemptsRef.current = 0;
-        if (connectTimeoutRef.current !== null) {
-          window.clearTimeout(connectTimeoutRef.current);
-          connectTimeoutRef.current = null;
+    const cleanup = useCallback(() => {
+        if (dataChannelRef.current && dataChannelRef.current.readyState !== 'closed') {
+            dataChannelRef.current.close();
         }
-        startMicIfNeeded();
-      }
+        dataChannelRef.current = null;
 
-      if (type === 'response.audio.delta') {
-        setStatus('speaking');
-        playChunk(data.delta as string);
-      }
+        if (peerRef.current && peerRef.current.connectionState !== 'closed') {
+            peerRef.current.close();
+        }
+        peerRef.current = null;
 
-      if (type === 'response.audio.done') {
-        setStatus('ready');
-      }
+        localStreamRef.current?.getTracks().forEach((track) => track.stop());
+        localStreamRef.current = null;
 
-      if (type === 'response.text.delta') {
-        setAiText((prev) => prev + (data.delta as string ?? ''));
-      }
+        if (remoteAudioRef.current) {
+            remoteAudioRef.current.pause();
+            remoteAudioRef.current.srcObject = null;
+            remoteAudioRef.current.remove();
+            remoteAudioRef.current = null;
+        }
+    }, []);
 
-      if (type === 'response.done') {
-        setAiText('');     // clear for next turn
+    const handleRealtimeEvent = useCallback((event: RealtimeServerEvent) => {
+        const eventType = event.type ?? '';
+
+        if (eventType === 'input_audio_buffer.speech_started') {
+            userBufferRef.current = '';
+            setUserText('');
+            return;
+        }
+
+        if (eventType === 'response.created') {
+            aiBufferRef.current = '';
+            setAiText('');
+            return;
+        }
+
+        if (eventType === 'conversation.item.input_audio_transcription.delta') {
+            userBufferRef.current += extractText(event);
+            setUserText(userBufferRef.current);
+            return;
+        }
+
+        if (
+            eventType === 'conversation.item.input_audio_transcription.completed' ||
+            eventType === 'conversation.item.input_audio_transcription.done'
+        ) {
+            const doneText = extractText(event);
+            userBufferRef.current = doneText || userBufferRef.current;
+            setUserText(userBufferRef.current);
+            return;
+        }
+
+        if (
+            eventType === 'response.text.delta' ||
+            eventType === 'response.audio_transcript.delta' ||
+            eventType === 'response.output_text.delta'
+        ) {
+            aiBufferRef.current += extractText(event);
+            setAiText(aiBufferRef.current);
+            setStatus('speaking');
+            return;
+        }
+
+        if (
+            eventType === 'response.text.done' ||
+            eventType === 'response.audio_transcript.done' ||
+            eventType === 'response.output_text.done'
+        ) {
+            const doneText = extractText(event);
+            if (doneText) {
+                aiBufferRef.current = doneText;
+                setAiText(doneText);
+            }
+            setStatus('ready');
+            return;
+        }
+
+        if (eventType === 'response.audio.delta') {
+            setStatus('speaking');
+            return;
+        }
+
+        if (eventType === 'response.audio.done' || eventType === 'response.done') {
+            setStatus('ready');
+            userBufferRef.current = '';
+            return;
+        }
+
+        if (eventType === 'error') {
+            setStatus('error');
+            setError(event.error?.message ?? event.message ?? 'Realtime connection error');
+        }
+    }, []);
+
+    const connect = useCallback(async () => {
+        if (statusRef.current === 'connecting' || statusRef.current === 'ready' || statusRef.current === 'speaking') {
+            return;
+        }
+
+        manualDisconnectRef.current = false;
+        setStatus('connecting');
+        setAiText('');
         setUserText('');
-        setStatus('ready');
-      }
-
-      if (type === 'conversation.item.input_audio_transcription.completed') {
-        const transcript = (data.transcript as string) ?? '';
-        setUserText(transcript);
-      }
-
-      if (type === 'error') {
-        hasErrorRef.current = true;
-        const msg =
-          (data as { message?: string }).message ||
-          (data.error as { message?: string } | undefined)?.message ||
-          'Unknown error';
-        setError(msg);
-        setStatus('error');
-        cleanup();
-      }
-    };
-
-    ws.onerror = () => {
-      hasErrorRef.current = true;
-      if (connectTimeoutRef.current !== null) {
-        window.clearTimeout(connectTimeoutRef.current);
-        connectTimeoutRef.current = null;
-      }
-      setError('Live voice backend सँग जोडिन सकेन। backend server चलिरहेको छ र /api/realtime उपलब्ध छ कि जाँच्नुहोस्।');
-      setStatus('error');
-      cleanup();
-    };
-
-    ws.onclose = () => {
-      if (connectTimeoutRef.current !== null) {
-        window.clearTimeout(connectTimeoutRef.current);
-        connectTimeoutRef.current = null;
-      }
-      cleanup();
-
-      if (manualDisconnectRef.current) {
-        setStatus('idle');
         setError(null);
-      } else if (statusRef.current === 'connecting' && !hasErrorRef.current) {
-        setStatus('error');
-        setError('Realtime session बन्द भयो। backend realtime credentials जाँच्नुहोस्।');
-      } else if ((statusRef.current === 'ready' || statusRef.current === 'speaking') && !hasErrorRef.current) {
-        if (reconnectAttemptsRef.current < 2) {
-          reconnectAttemptsRef.current += 1;
-          setStatus('connecting');
-          setError(`Live connection drop भयो। Reconnecting... (${reconnectAttemptsRef.current}/2)`);
-          reconnectTimerRef.current = window.setTimeout(() => {
-            connect();
-          }, 1000 * reconnectAttemptsRef.current);
-        } else {
-          setStatus('error');
-          setError('Live connection drop भयो। फेरि mic थिचेर reconnect गर्नुहोस्।');
+        aiBufferRef.current = '';
+        userBufferRef.current = '';
+
+        try {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                throw new Error('यो ब्राउजरले realtime voice support गर्दैन।');
+            }
+
+            const localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            localStream.getAudioTracks().forEach((track) => {
+                track.enabled = !isMutedRef.current;
+            });
+            localStreamRef.current = localStream;
+
+            const sessionRes = await fetch('/api/realtime/session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            });
+
+            const rawSessionBody = await sessionRes.text();
+            const sessionData = rawSessionBody
+                ? (JSON.parse(rawSessionBody) as SessionResponse)
+                : ({} as SessionResponse);
+
+            if (!sessionRes.ok) {
+                const backendMessage = sessionData.error || sessionData.details;
+                const statusMessage = `HTTP ${sessionRes.status}`;
+                const fallbackBody = rawSessionBody.slice(0, 200).trim();
+
+                if (backendMessage) {
+                    throw new Error(`${backendMessage} (${statusMessage})`);
+                }
+
+                if (fallbackBody) {
+                    throw new Error(`Realtime session बनाउन सकेन। ${statusMessage}: ${fallbackBody}`);
+                }
+
+                throw new Error(`Realtime session बनाउन सकेन। ${statusMessage}`);
+            }
+
+            const clientSecret = sessionData.clientSecret;
+            if (!clientSecret) {
+                throw new Error('Realtime client secret प्राप्त भएन।');
+            }
+
+            const realtimeUrl = sessionData.realtimeUrl || `https://api.openai.com/v1/realtime?model=${REALTIME_MODEL}`;
+
+            const peer = new RTCPeerConnection();
+            peerRef.current = peer;
+            localStream.getTracks().forEach((track) => peer.addTrack(track, localStream));
+
+            const remoteAudio = document.createElement('audio');
+            remoteAudio.autoplay = true;
+            remoteAudio.setAttribute('playsinline', 'true');
+            remoteAudioRef.current = remoteAudio;
+
+            peer.ontrack = (event) => {
+                const [remoteStream] = event.streams;
+                if (!remoteStream) return;
+                remoteAudio.srcObject = remoteStream;
+                void remoteAudio.play().catch(() => {
+                    // Autoplay can fail if browser policy blocks untrusted playback.
+                });
+            };
+
+            peer.onconnectionstatechange = () => {
+                const conn = peer.connectionState;
+                if (conn === 'connected') {
+                    setStatus('ready');
+                    setError(null);
+                    return;
+                }
+
+                if ((conn === 'failed' || conn === 'disconnected' || conn === 'closed') && !manualDisconnectRef.current) {
+                    cleanup();
+                    setStatus('error');
+                    setError('Realtime connection drop भयो। फेरि mic थिचेर reconnect गर्नुहोस्।');
+                }
+            };
+
+            const dataChannel = peer.createDataChannel('oai-events');
+            dataChannelRef.current = dataChannel;
+
+            dataChannel.onopen = () => {
+                dataChannel.send(JSON.stringify({
+                    type: 'session.update',
+                    session: {
+                        model: REALTIME_MODEL,
+                        modalities: ['audio', 'text'],
+                        input_audio_transcription: {
+                            model: 'gpt-4o-mini-transcribe',
+                        },
+                        turn_detection: {
+                            type: 'server_vad',
+                            create_response: true,
+                            interrupt_response: true,
+                        },
+                    },
+                }));
+            };
+
+            dataChannel.onmessage = (event) => {
+                try {
+                    handleRealtimeEvent(JSON.parse(event.data as string) as RealtimeServerEvent);
+                } catch {
+                    // Ignore malformed events and keep the session alive.
+                }
+            };
+
+            dataChannel.onerror = () => {
+                setStatus('error');
+                setError('Realtime data channel error भयो।');
+            };
+
+            const offer = await peer.createOffer({ offerToReceiveAudio: true });
+            await peer.setLocalDescription(offer);
+
+            const sdpRes = await fetch(realtimeUrl, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${clientSecret}`,
+                    'OpenAI-Beta': 'realtime=v1',
+                    'Content-Type': 'application/sdp',
+                },
+                body: offer.sdp ?? '',
+            });
+
+            if (!sdpRes.ok) {
+                const body = await sdpRes.text();
+                throw new Error(body || 'Realtime SDP negotiation failed');
+            }
+
+            const answerSdp = await sdpRes.text();
+            await peer.setRemoteDescription({
+                type: 'answer',
+                sdp: answerSdp,
+            });
+        } catch (err) {
+            cleanup();
+            setStatus('error');
+            setError(toFriendlyError(err));
         }
-      } else if (statusRef.current !== 'error') {
+    }, [cleanup, handleRealtimeEvent]);
+
+    const disconnect = useCallback(() => {
+        manualDisconnectRef.current = true;
+        cleanup();
         setStatus('idle');
-      }
-    };
-  }, [startMic, playChunk, cleanup]);
+        setAiText('');
+        setUserText('');
+        setError(null);
+        aiBufferRef.current = '';
+        userBufferRef.current = '';
+    }, [cleanup]);
 
-  // ── Disconnect ────────────────────────────────────────────────────────────
-  const disconnect = useCallback(() => {
-    manualDisconnectRef.current = true;
-    reconnectAttemptsRef.current = 0;
-    cleanup();
-    setStatus('idle');
-    setAiText('');
-    setUserText('');
-    setError(null);
-  }, [cleanup]);
+    const toggleMute = useCallback(() => {
+        setIsMuted((prev) => {
+            const next = !prev;
+            isMutedRef.current = next;
+            localStreamRef.current?.getAudioTracks().forEach((track) => {
+                track.enabled = !next;
+            });
+            return next;
+        });
+    }, []);
 
-  // ── Mute toggle ───────────────────────────────────────────────────────────
-  const toggleMute = useCallback(() => {
-    setIsMuted((prev) => {
-      isMutedRef.current = !prev;
-      return !prev;
-    });
-  }, []);
+    useEffect(() => () => {
+        cleanup();
+    }, [cleanup]);
 
-  // Cleanup on unmount
-  useEffect(() => () => { cleanup(); }, [cleanup]);
-
-  return { status, aiText, userText, isMuted, error, connect, disconnect, toggleMute };
+    return { status, aiText, userText, isMuted, error, connect, disconnect, toggleMute };
 }

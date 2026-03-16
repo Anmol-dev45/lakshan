@@ -1,8 +1,8 @@
-'use strict';
-const express = require('express');
-const router  = express.Router();
-const { client, MODELS } = require('../clients');
-const { gptLimiter }     = require('../rateLimiter');
+"use strict";
+const express = require("express");
+const router = express.Router();
+const { client, MODELS } = require("../clients");
+const { gptLimiter } = require("../rateLimiter");
 
 const HEALTH_SYSTEM_PROMPT = `
 You are a clinical symptom triage assistant in a health app for rural Nepal.
@@ -107,85 +107,94 @@ function safeParseJSON(raw) {
   try {
     return JSON.parse(raw);
   } catch {
-    const cleaned = raw.replace(/```json|```/g, '').trim();
+    const cleaned = raw.replace(/```json|```/g, "").trim();
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (match) return JSON.parse(match[0]);
-    throw new Error('No valid JSON in response');
+    throw new Error("No valid JSON in response");
   }
 }
 
 // POST /api/analyze  — text symptom analysis (JSON mode by default)
-router.post('/', async (req, res) => {
+router.post("/", async (req, res) => {
   const { message, messages, session_id, json_mode = true } = req.body;
 
-  const userContent = message || (Array.isArray(messages) && messages.length
-    ? messages[messages.length - 1]?.content
-    : null);
+  const userContent =
+    message ||
+    (Array.isArray(messages) && messages.length
+      ? messages[messages.length - 1]?.content
+      : null);
 
   if (!userContent?.trim())
-    return res.status(400).json({ error: 'message or messages array is required' });
+    return res
+      .status(400)
+      .json({ error: "message or messages array is required" });
 
-  const sid     = session_id || crypto.randomUUID();
+  const sid = session_id || crypto.randomUUID();
   const history = sessions.get(sid) || [];
 
   // Multi-turn: caller passes full messages array
   if (Array.isArray(messages) && messages.length > 1) {
-    sessions.set(sid, messages.filter(m => m.role !== 'system'));
-    const fullHistory = messages.filter(m => m.role !== 'system');
+    sessions.set(
+      sid,
+      messages.filter((m) => m.role !== "system"),
+    );
+    const fullHistory = messages.filter((m) => m.role !== "system");
     try {
       await gptLimiter.wait();
       const sysPrompt = json_mode ? JSON_SYSTEM : HEALTH_SYSTEM_PROMPT;
       const response = await client.chat.completions.create({
-        model:                 MODELS.gpt,
+        model: MODELS.gpt,
         max_completion_tokens: 2000,
-        messages: [
-          { role: 'system', content: sysPrompt },
-          ...fullHistory,
-        ],
+        messages: [{ role: "system", content: sysPrompt }, ...fullHistory],
       });
-      const raw   = response.choices[0].message.content;
+      const raw = response.choices[0].message.content;
       const reply = json_mode ? safeParseJSON(raw) : raw;
-      return res.json({ session_id: sid, response: reply, stop_reason: response.choices[0].finish_reason });
+      return res.json({
+        session_id: sid,
+        response: reply,
+        stop_reason: response.choices[0].finish_reason,
+      });
     } catch (err) {
       return res.status(err.status || 500).json({ error: err.message });
     }
   }
 
   // Single-turn
-  history.push({ role: 'user', content: userContent });
+  history.push({ role: "user", content: userContent });
 
   try {
     await gptLimiter.wait();
     const sysPrompt = json_mode ? JSON_SYSTEM : HEALTH_SYSTEM_PROMPT;
     const response = await client.chat.completions.create({
-      model:                 MODELS.gpt,
+      model: MODELS.gpt,
       max_completion_tokens: json_mode ? 2000 : 900,
-      messages: [
-        { role: 'system', content: sysPrompt },
-        ...history,
-      ],
+      messages: [{ role: "system", content: sysPrompt }, ...history],
     });
 
-    const raw   = response.choices[0].message.content;
+    const raw = response.choices[0].message.content;
     const reply = json_mode ? safeParseJSON(raw) : raw;
 
-    history.push({ role: 'assistant', content: raw });
+    history.push({ role: "assistant", content: raw });
     sessions.set(sid, history);
 
-    res.json({ session_id: sid, response: reply, stop_reason: response.choices[0].finish_reason });
+    res.json({
+      session_id: sid,
+      response: reply,
+      stop_reason: response.choices[0].finish_reason,
+    });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
 });
 
 // POST /api/analyze/chat  — follow-up conversation (plain text)
-router.post('/chat', async (req, res) => {
+router.post("/chat", async (req, res) => {
   const { messages, session_id } = req.body;
   if (!Array.isArray(messages) || !messages.length)
-    return res.status(400).json({ error: 'messages array required' });
+    return res.status(400).json({ error: "messages array required" });
 
-  const sid     = session_id || crypto.randomUUID();
-  const history = messages.filter(m => m.role !== 'system');
+  const sid = session_id || crypto.randomUUID();
+  const history = messages.filter((m) => m.role !== "system");
 
   const CHAT_SYS = `You are a warm, professional clinical interviewer for a health app in rural Nepal.
 Your job: gather a full clinical picture through empathetic, specific conversation — like a skilled doctor would at a health post.
@@ -248,9 +257,9 @@ Always respond in the SAME language the user is using (Nepali or English or mixe
   try {
     await gptLimiter.wait();
     const response = await client.chat.completions.create({
-      model:                 MODELS.gpt,
+      model: MODELS.gpt,
       max_completion_tokens: 400,
-      messages: [{ role: 'system', content: CHAT_SYS }, ...history],
+      messages: [{ role: "system", content: CHAT_SYS }, ...history],
     });
     const reply = response.choices[0].message.content;
     res.json({ session_id: sid, response: reply });
@@ -260,9 +269,9 @@ Always respond in the SAME language the user is using (Nepali or English or mixe
 });
 
 // POST /api/analyze/reset
-router.post('/reset', (req, res) => {
+router.post("/reset", (req, res) => {
   sessions.delete(req.body.session_id);
-  res.json({ status: 'cleared' });
+  res.json({ status: "cleared" });
 });
 
 module.exports = router;

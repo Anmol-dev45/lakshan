@@ -9,7 +9,7 @@ const analyzeRouter = require("./routes/analyze");
 const voiceRouter = require("./routes/voice");
 const ttsRouter = require("./routes/tts");
 const visionRouter = require("./routes/vision");
-const { setupRealtimeProxy } = require("./routes/realtime");
+const realtimeSessionRouter = require("./routes/realtimeSession");
 
 const app = express();
 const server = http.createServer(app);
@@ -47,6 +47,7 @@ app.use("/api/analyze", analyzeRouter);
 app.use("/api/voice", voiceRouter);
 app.use("/api/tts", ttsRouter);
 app.use("/api/vision", visionRouter);
+app.use("/api/realtime", realtimeSessionRouter);
 
 // Health check
 app.get("/health", (req, res) =>
@@ -59,10 +60,18 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message });
 });
 
-// Attach realtime WebSocket proxy
-setupRealtimeProxy(server);
-
 const PORT = process.env.PORT || 8000;
+
+if (!process.env.OPENAI_API_KEY) {
+  console.warn(
+    "[realtime] OPENAI_API_KEY is missing. POST /api/realtime/session will return HTTP 500.",
+  );
+  if (process.env.AZURE_API_KEY) {
+    console.warn(
+      "[realtime] AZURE_API_KEY is set, but the current browser WebRTC flow requires OPENAI_API_KEY.",
+    );
+  }
+}
 
 server.on("error", (err) => {
   if (err && err.code === "EADDRINUSE") {
@@ -89,7 +98,7 @@ server.listen(PORT, () => {
   console.log(`   POST /api/voice/transcribe — audio → text (STT)`);
   console.log(`   POST /api/tts              — text → audio (TTS)`);
   console.log(`   POST /api/vision           — analyze photo (vision)`);
-  console.log(`   WSS  /api/realtime         — live bidirectional voice\n`);
+  console.log(`   POST /api/realtime/session — realtime ephemeral session\n`);
 });
 
 function gracefulShutdown(signal) {
