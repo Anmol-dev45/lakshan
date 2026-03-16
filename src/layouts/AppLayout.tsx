@@ -49,7 +49,7 @@ const BottomNav = () => {
 
 const AppLayout = () => {
   return (
-    <div className="pb-16 min-h-screen bg-surface-50 flex flex-col font-sans relative max-w-md mx-auto bg-white shadow-2xl overflow-hidden">
+    <div className="pb-16 min-h-screen flex flex-col font-sans relative max-w-md mx-auto bg-white shadow-2xl overflow-hidden">
       <main className="flex-1 overflow-y-auto no-scrollbar">
         <Outlet />
       </main>

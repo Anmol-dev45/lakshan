@@ -81,6 +81,7 @@ const t = {
   chatImageFail:     { ne: 'फोटो विश्लेषण गर्न सकिएन। कृपया पुनः प्रयास गर्नुहोस्।', en: 'Could not analyse photo. Please try again.' },
   chatSendingPhoto:  { ne: '📷 फोटो पठाइरहेको छु — विश्लेषण गर्दैछु...', en: '📷 Sending photo — analysing...' },
   chatDisclaimer:    { ne: 'यो एआई सल्लाह हो, अन्तिम चिकित्सा निर्णय होइन।', en: 'AI advice only — not a medical diagnosis.' },
+  chatGreeting:      { ne: 'नमस्ते! म तपाईंको स्वास्थ्य सहायक हुँ। आज तपाईंलाई कस्तो महसुस भइरहेको छ? माइक थिच्नुहोस् वा टाइप गर्नुहोस्।', en: 'Hello! I\'m your AI health assistant. How are you feeling today? Tap the mic or type to describe your symptoms.' },
 
   // ── DiagnosisResult ───────────────────────────────────────────────────────
   diagTitle:         { ne: 'जाँचको नतिजा', en: 'Diagnosis Result' },

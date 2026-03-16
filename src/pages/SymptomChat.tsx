@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ChevronLeft, Mic, MicOff, Send, Thermometer, Wind, Target, Zap, Activity, RefreshCw, Camera } from 'lucide-react';
 import { useAppDispatch, useAppSelector } from '../hooks/useStore';
 import {
@@ -34,6 +34,7 @@ function makeMessage(role: 'user' | 'assistant', content: string): ChatMessage {
 
 const SymptomChat = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useAppDispatch();
   const { messages, isAnalyzing, isChatting, error } = useAppSelector((s) => s.symptom);
   const t = useT();
@@ -44,6 +45,24 @@ const SymptomChat = () => {
   const voice = useVoiceInput();
 
   const pendingVoiceText = useRef('');
+
+  // Dispatch greeting when chat is empty (on mount or after clear)
+  useEffect(() => {
+    if (messages.length === 0) {
+      dispatch(addMessage(makeMessage('assistant', t('chatGreeting'))));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
+
+  // Auto-start mic if navigated from Home with autoMic flag
+  useEffect(() => {
+    const state = location.state as { autoMic?: boolean } | null;
+    if (state?.autoMic && voice.isSupported) {
+      const timer = setTimeout(() => voice.startListening(), 400);
+      return () => clearTimeout(timer);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Store transcript when it arrives
   useEffect(() => {

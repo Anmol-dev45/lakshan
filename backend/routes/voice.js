@@ -10,11 +10,8 @@ const { sttLimiter }     = require('../rateLimiter');
 const upload = multer({
   dest: path.join(__dirname, '../uploads/'),
   limits: { fileSize: 25 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowed = ['audio/mpeg', 'audio/wav', 'audio/mp4',
-                     'audio/webm', 'audio/ogg', 'audio/m4a',
-                     'audio/x-m4a', 'audio/webm;codecs=opus'];
-    // Accept any audio type broadly
+  fileFilter: (_req, file, cb) => {
+    // Accept any audio/* or raw binary from mobile recorders
     cb(null, file.mimetype.startsWith('audio/') || file.mimetype === 'application/octet-stream');
   },
 });

@@ -14,9 +14,21 @@ const { setupRealtimeProxy } = require('./routes/realtime');
 const app    = express();
 const server = http.createServer(app);
 
-// CORS — allow the Vite frontend
+// CORS — allow the Vite frontend and ngrok tunnels
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:3000'],
+  origin(origin, callback) {
+    if (
+      !origin ||
+      /^https?:\/\/localhost(:\d+)?$/.test(origin) ||
+      /\.ngrok(-free)?\.app$/.test(origin) ||
+      /\.ngrok(-free)?\.dev$/.test(origin) ||
+      /\.ngrok\.io$/.test(origin)
+    ) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: origin not allowed — ${origin}`));
+    }
+  },
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));

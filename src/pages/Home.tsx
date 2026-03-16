@@ -29,18 +29,21 @@ const Home = () => {
           </div>
 
           <div
-            onClick={() => navigate('/chat')}
+            onClick={() => navigate('/chat', { state: { autoMic: true } })}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && navigate('/chat', { state: { autoMic: true } })}
             className="w-24 h-24 mx-auto bg-primary-500 rounded-full flex items-center justify-center text-white mb-6 shadow-float relative z-10 cursor-pointer hover:scale-105 transition-transform"
           >
             <Mic size={40} />
-            <div className="absolute inset-0 bg-primary-500 rounded-full animate-ping opacity-20"></div>
+            <div className="absolute inset-0 bg-primary-500 rounded-full animate-ping opacity-20 pointer-events-none"></div>
           </div>
 
           <h2 className="text-xl font-bold text-slate-900 mb-2 relative z-10">{t('homeSpeakTitle')}</h2>
           <p className="text-slate-500 text-sm mb-6 relative z-10">{t('homeSpeakSub')}</p>
 
           <button
-            onClick={() => navigate('/chat')}
+            onClick={() => navigate('/chat', { state: { autoMic: true } })}
             className="w-full bg-white border border-primary-200 text-primary-600 font-bold py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-primary-50 transition-colors shadow-sm relative z-10"
           >
             {t('homeStartCheck')} <ChevronRight size={18} />
@@ -52,6 +55,9 @@ const Home = () => {
         {/* Live AI Doctor — full-width featured card */}
         <div
           onClick={() => navigate('/live')}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === 'Enter' && navigate('/live')}
           className="w-full bg-gradient-to-r from-rose-500 to-primary-600 rounded-2xl p-4 mb-4 flex items-center gap-4 cursor-pointer shadow-md hover:shadow-lg transition-shadow"
         >
           <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
@@ -66,7 +72,7 @@ const Home = () => {
 
         {/* Grid of features */}
         <div className="grid grid-cols-2 gap-4 mb-6">
-          <div onClick={() => navigate('/report-scan')} className="bg-white border border-surface-100 p-4 rounded-2xl shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+          <div onClick={() => navigate('/report-scan')} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && navigate('/report-scan')} className="bg-white border border-surface-100 p-4 rounded-2xl shadow-sm hover:shadow-md transition-shadow cursor-pointer">
             <div className="w-12 h-12 bg-success-50 rounded-xl flex items-center justify-center text-success-500 mb-4">
               <FileText size={24} />
             </div>
@@ -74,7 +80,7 @@ const Home = () => {
             <p className="text-xs text-slate-500">{t('homeReportScanSub')}</p>
           </div>
 
-          <div onClick={() => navigate('/medicine')} className="bg-white border border-surface-100 p-4 rounded-2xl shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+          <div onClick={() => navigate('/medicine')} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && navigate('/medicine')} className="bg-white border border-surface-100 p-4 rounded-2xl shadow-sm hover:shadow-md transition-shadow cursor-pointer">
             <div className="w-12 h-12 bg-orange-50 rounded-xl flex items-center justify-center text-orange-500 mb-4">
               <Pill size={24} />
             </div>
@@ -82,7 +88,7 @@ const Home = () => {
             <p className="text-xs text-slate-500">{t('homeMedicineSub')}</p>
           </div>
 
-          <div onClick={() => navigate('/hospital')} className="bg-white border border-surface-100 p-4 rounded-2xl shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+          <div onClick={() => navigate('/hospital')} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && navigate('/hospital')} className="bg-white border border-surface-100 p-4 rounded-2xl shadow-sm hover:shadow-md transition-shadow cursor-pointer">
             <div className="w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center text-primary-600 mb-4">
               <MapPin size={24} />
             </div>
@@ -90,7 +96,7 @@ const Home = () => {
             <p className="text-xs text-slate-500">{t('homeHospitalSub')}</p>
           </div>
 
-          <div onClick={() => navigate('/disease-map')} className="bg-white border border-surface-100 p-4 rounded-2xl shadow-sm hover:shadow-md transition-shadow cursor-pointer">
+          <div onClick={() => navigate('/disease-map')} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && navigate('/disease-map')} className="bg-white border border-surface-100 p-4 rounded-2xl shadow-sm hover:shadow-md transition-shadow cursor-pointer">
             <div className="w-12 h-12 bg-danger-50 rounded-xl flex items-center justify-center text-danger-500 mb-4">
               <AlertTriangle size={24} />
             </div>

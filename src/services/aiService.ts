@@ -1,7 +1,9 @@
 import type { ChatMessage, DiagnosisResult, RiskLevel, UrgencyLevel, ConfidenceLevel } from '../types/health';
 
 // ─── Backend base URL ─────────────────────────────────────────────────────────
-const BACKEND = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000';
+// Empty string = relative URL → Vite dev proxy forwards /api/* to localhost:8000.
+// VITE_BACKEND_URL overrides this when deploying behind ngrok or a real hostname.
+const BACKEND = import.meta.env.VITE_BACKEND_URL ?? '';
 
 // ─── Local API key (kept for legacy settings page display) ────────────────────
 export function getStoredApiKey(): string {
@@ -117,14 +119,88 @@ export async function analyzeImage(
   formData.append('mode', mode);
   if (context) formData.append('context', context);
 
-  const res = await fetch(`${BACKEND}/api/vision`, {
-    method: 'POST',
-    body: formData,
-  });
-  if (!res.ok) throw new Error(`Vision error ${res.status}`);
-  const data = await res.json();
-  return (data.result ?? data) as Record<string, unknown>;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+
+  try {
+    const res = await fetch(`${BACKEND}/api/vision`, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      return (data.result ?? data) as Record<string, unknown>;
+    }
+
+    // Backend reachable but returned an HTTP error — surface the actual message
+    const errBody = await res.json().catch(() => null) as Record<string, unknown> | null;
+    const msg = (errBody?.error ?? errBody?.message ?? `AI vision error (HTTP ${res.status})`) as string;
+    throw new Error(msg);
+
+  } catch (e) {
+    clearTimeout(timeoutId);
+
+    // Network failure or timeout → show offline demo so the UI still renders
+    if (e instanceof TypeError || (e instanceof Error && (e.name === 'AbortError' || e.name === 'TimeoutError'))) {
+      console.warn('[aiService] Vision backend unreachable, using offline demo:', (e as Error).message);
+      await new Promise((r) => setTimeout(r, 1200));
+      return MOCK_REPORT_RESULT;
+    }
+
+    // API / auth / model error → re-throw so MedicalReportScan can show the real error
+    throw e;
+  }
 }
+
+const MOCK_REPORT_RESULT: Record<string, unknown> = {
+  report_type: 'CBC (Complete Blood Count)',
+  report_date: null,
+  patient_info: { name: null, age: null },
+  what_this_means_for_you:
+    'तपाईंको रगत परीक्षणको नतिजा विश्लेषण गर्न सकिएन — कृपया ब्याकएन्ड सर्भर चालु छ कि छैन जाँच्नुहोस्। (Demo mode: backend unreachable. Please start the backend server and retry.)',
+  urgency: 'routine',
+  urgency_reason: 'Demo fallback — real analysis requires backend',
+  metrics: [
+    {
+      name: 'HB',
+      plain_name: 'HEMOGLOBIN (HB)',
+      value: '—',
+      unit: 'g/dL',
+      reference_range: '13–17 g/dL (पुरुष) / 12–15 g/dL (महिला)',
+      status: 'normal',
+      explanation:
+        'हेमोग्लोबिनले रगतमा अक्सिजन बोक्ने काम गर्छ। वास्तविक नतिजाका लागि ब्याकएन्ड चालु गर्नुहोस्।',
+      nepali_tip: 'पालक, दाल, र कलेजो नियमित खानुहोस् — रगत स्वस्थ राख्न मद्दत गर्छ।',
+    },
+    {
+      name: 'WBC',
+      plain_name: 'WBC COUNT',
+      value: '—',
+      unit: 'cells/μL',
+      reference_range: '4000–11000 cells/μL',
+      status: 'normal',
+      explanation: 'श्वेत रक्त कणिकाले शरीरलाई संक्रमणबाट जोगाउँछ।',
+      nepali_tip: 'पर्याप्त पानी पिउनुहोस् र सन्तुलित खाना खानुहोस्।',
+    },
+    {
+      name: 'Cr',
+      plain_name: 'CREATININE',
+      value: '—',
+      unit: 'mg/dL',
+      reference_range: '0.7–1.3 mg/dL',
+      status: 'normal',
+      explanation: 'क्रिएटिनिनले मिर्गौलाको काम जाँच्छ।',
+      nepali_tip: 'दिनमा ८–१० गिलास पानी पिउनुहोस् — मिर्गौला स्वस्थ रहन्छ।',
+    },
+  ],
+  doctor_note:
+    'यो डेमो नतिजा हो। वास्तविक विश्लेषणका लागि कृपया ब्याकएन्ड सर्भर चालु गरेपछि पुनः प्रयास गर्नुहोस्।',
+  disclaimer:
+    'यो जानकारी केवल शैक्षिक उद्देश्यको लागि हो। कृपया आफ्नो डाक्टरसँग परामर्श लिनुहोस्।',
+};
 
 // ─── Parse backend JSON into DiagnosisResult ─────────────────────────────────
 function parseDiagnosis(raw: Record<string, unknown>): DiagnosisResult {
@@ -179,17 +255,25 @@ function parseDiagnosis(raw: Record<string, unknown>): DiagnosisResult {
 // ─── Mock fallbacks ───────────────────────────────────────────────────────────
 function buildMockFollowUp(messages: ChatMessage[]): string {
   const last = [...messages].reverse().find((m) => m.role === 'user')?.content.toLowerCase() ?? '';
+  // Cardiac + kidney/back confusion — common lay description
+  if (/heart.?attack|मुटु|cardiac/.test(last) && /kidney|मिर्गौला|back|पिठ्युँ|side|छेउ/.test(last))
+    return 'त्यो सुनेर दुःख लाग्यो — यो दुखाइ एकदमै कठिन हुन सक्छ। के तपाईं आफ्नो पिठ्युँ वा छेउको दुखाइ बारे भन्दै हुनुहुन्छ? छाती र सास फेर्न ठीक छ?\n(That sounds very painful. Are you describing pain in your back or side? Is your chest and breathing okay?)';
+  if (/heart.?attack|मुटु.आक्रमण/.test(last))
+    return 'यो सुन्दा एकदमै गम्भीर लाग्छ। के छातीमा दबाब वा जलन छ? बाँया हात वा जबडामा दुखाइ पनि छ?\n(That sounds serious. Is there pressure or burning in your chest? Any pain in the left arm or jaw?)';
   if (/bleed|रगत|blood/.test(last) && /accident|दुर्घटना|wound|चोट|injury|घाउ/.test(last))
     return 'दुर्घटनाको लागि खेद छ। रगत धेरै आइरहेको छ कि रोकिएको छ? के हड्डी मोडिएको जस्तो लागेको छ?\n(Sorry to hear about the accident. Is the bleeding heavy or has it slowed? Does it feel like anything may be broken?)';
   if (/bleed|रगत|blood/.test(last))
     return 'रगत आइरहेको कुरा सुनेर चिन्ता लाग्यो। रगत धेरै आइरहेको छ कि थोरै? कुन ठाउँबाट आइरहेको छ?\n(Concerned about the bleeding — is it heavy or light? Which part of the body?)';
   if (/accident|दुर्घटना|fall|लड्नु|injury|चोट/.test(last))
     return 'दुर्घटना भएको सुनेर दुःख लाग्यो। कहाँ चोट लाग्यो र कति दुखिरहेको छ १–१० मा?\n(Sorry to hear that. Where is the injury and how severe is the pain on a scale of 1–10?)';
-  if (/fever|ज्वरो/.test(last)) return 'ज्वरो कति छ नाप्नुभयो? साथै, के तपाईंलाई खोकी वा सास फेर्न गार्हो छ?';
-  if (/cough|खोकी/.test(last))  return 'खोकी कति दिनदेखि छ? के कफ वा रगत आएको छ?';
-  if (/head|टाउको/.test(last))  return 'टाउको दुखाइ कहाँ केन्द्रित छ? के उज्यालोमा असह्य लाग्छ?';
-  if (/chest|छाती/.test(last))  return 'छातीको दुखाइ कहिलेदेखि सुरु भयो? सास फेर्दा बढ्छ?';
-  return 'तपाईंले भन्नुभएको बुझें। यो समस्या कति दिनदेखि छ र उमेर र लिंग के हो?\n(Understood. How long has this been going on, and may I ask your age and sex?)';
+  if (/kidney|मिर्गौला|flank|पिठ्युँ/.test(last))
+    return 'पिठ्युँ वा छेउको दुखाइ एकदमै कष्टदायक हुन सक्छ। दुखाइ अचानक सुरु भयो कि बिस्तारै? पिसाब गर्दा जलन वा रगत आएको छ?\n(Flank or kidney pain can be very intense. Did it start suddenly or gradually? Any burning or blood when urinating?)';
+  if (/fever|ज्वरो/.test(last)) return 'ज्वरो कति छ नाप्नुभयो? साथै, के तपाईंलाई खोकी वा सास फेर्न गार्हो छ?\n(Have you measured your temperature? Also, do you have a cough or difficulty breathing?)';
+  if (/cough|खोकी/.test(last))  return 'खोकी सुन्दा असुविधाजनक लागेको होला। खोकी कति दिनदेखि छ? के कफ वा रगत आएको छ?\n(A persistent cough can be draining. How many days has it been? Any mucus or blood?)';
+  if (/head|टाउको/.test(last))  return 'टाउको दुखाइ कहाँ केन्द्रित छ — अगाडि, पछाडि, वा एकतिर? के उज्यालोमा असह्य लाग्छ?\n(Where is the headache centred — front, back, or one side? Does light make it worse?)';
+  if (/chest|छाती/.test(last))  return 'छातीको दुखाइ बारे सुन्दा चिन्ता लाग्यो। कहिलेदेखि सुरु भयो? सास फेर्दा वा हिँड्दा बढ्छ?\n(Chest pain is something to take seriously. When did it start? Does it get worse when breathing or moving?)';
+  if (/stomach|पेट|abdomen|nausea|बान्ता/.test(last))  return 'पेटको समस्या धेरै हुन सक्छ। दुखाइ कहाँ छ — माथि, तल, वा बीचमा? खाना खानुभन्दा पहिले वा पछि बढ्छ?\n(Stomach issues can have many causes. Where is the pain — upper, lower, or central? Is it worse before or after eating?)';
+  return 'तपाईंले भन्नुभएको बुझें। यो समस्या कति दिनदेखि छ? र तपाईंको उमेर र लिंग के हो?\n(Understood. How long has this been going on? And may I ask your age and sex?)';
 }
 
 function buildMockDiagnosis(messages: ChatMessage[]): DiagnosisResult {
